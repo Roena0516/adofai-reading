@@ -3,6 +3,7 @@ import { loadFiles } from './chart/loader';
 import { ChartContext, useChartModel } from './chart/model';
 import { DropScreen } from './components/DropScreen';
 import { Header } from './components/Header';
+import { LevelPicker } from './components/LevelPicker';
 import { Sidebar, SidebarHandle } from './components/Sidebar';
 import { TimelineStrip } from './components/TimelineStrip';
 import { Stage } from './components/Stage';
@@ -76,6 +77,7 @@ export function App() {
           {error}
         </div>
       )}
+      <LevelPicker />
       {(dragging || loading) && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-canvas/70 backdrop-blur-sm">
           <div className="rounded-2xl border-2 border-dashed border-accent/60 px-10 py-8 text-lg font-medium text-accent-soft">

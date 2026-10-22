@@ -20,3 +20,6 @@ export * from './track/ease';
 export * from './track/color';
 export * from './track/effects';
 export * from './track/camera';
+export * from './track/events';
+export * from './track/vfx';
+export * from './track/decorations';

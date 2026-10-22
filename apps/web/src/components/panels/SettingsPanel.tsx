@@ -135,6 +135,21 @@ export function SettingsPanel() {
               checked={s.trackEffects}
               onChange={(trackEffects) => s.set({ trackEffects })}
             />
+            <Toggle
+              label="화면 효과 (배경·플래시·흔들림·행성 회전)"
+              checked={s.trackScreenFx}
+              onChange={(trackScreenFx) => s.set({ trackScreenFx })}
+            />
+            <Toggle
+              label="필터·블룸 (글리치·VHS·어안·눈 등)"
+              checked={s.trackFilters}
+              onChange={(trackFilters) => s.set({ trackFilters })}
+            />
+            <Toggle
+              label="장식 (이미지·글자) — 타일을 가릴 수 있어요"
+              checked={s.trackDecorations}
+              onChange={(trackDecorations) => s.set({ trackDecorations })}
+            />
             <Field label="카메라 따라가기" hint="값이 작을수록 카메라가 행성을 천천히 따라갑니다.">
               <Slider
                 value={s.cameraFollow}

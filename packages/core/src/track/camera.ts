@@ -7,6 +7,7 @@ import { ease } from './ease';
 import type { TrackEffects } from './effects';
 import { beatsToSeconds, eventTime, tileStateAt } from './effects';
 import type { Track } from './track';
+import { levelEvents } from './events';
 import { tileTimes, vec2 } from './track';
 
 export interface CameraView {
@@ -122,8 +123,9 @@ export class CameraTimeline {
 
     if (opts.events) {
       const events: Array<{ t: number; f: number; ev: Record<string, unknown> }> = [];
+      const byFloor = levelEvents(level);
       for (let f = 0; f <= n; f++) {
-        for (const ev of level.actionsByFloor[f] ?? []) {
+        for (const ev of byFloor[f] ?? []) {
           if (ev.eventType === 'MoveCamera' && ev.active !== false)
             events.push({ t: eventTime(timing, f, ev.angleOffset), f, ev });
         }
@@ -145,10 +147,12 @@ export class CameraTimeline {
             ox = px ?? 0;
             oy = py ?? 0;
           } else if (rel === 'Tile') {
-            // legacyCamRelativeTo used the planet's tile when the event fires, which is this floor.
+            // legacyCamRelativeTo used the planet's tile when the event fires, which is this floor. The
+            // camera goes to where the editor put that tile, not where MoveTrack has moved it: Timeline
+            // moves #508 70 tiles away a beat before and frames the magic circle at its original spot.
             player = false;
-            ox = this.landX[f]! + (px ?? 0);
-            oy = this.landY[f]! + (py ?? 0);
+            ox = track.x[f]! + (px ?? 0);
+            oy = track.y[f]! + (py ?? 0);
           } else if (rel === 'Global') {
             player = false;
             ox = px ?? 0;

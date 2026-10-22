@@ -41,6 +41,12 @@ export interface Settings {
   trackColorMode: 'level' | 'finger';
   /** Apply MoveCamera / MoveTrack / AnimateTrack like the game. */
   trackEffects: boolean;
+  /** Backgrounds, flashes, screen shake and planet easing. */
+  trackScreenFx: boolean;
+  /** SetFilter and Bloom (WebGL). */
+  trackFilters: boolean;
+  /** Decoration images and text (off by default: they can hide the tiles). */
+  trackDecorations: boolean;
   /** How quickly the camera catches up with the planet (1/s). */
   cameraFollow: number;
   /** Draw pseudo chords at their real (slightly staggered) times or all at the first note's time. */
@@ -74,6 +80,9 @@ export const DEFAULT_SETTINGS: Settings = {
   trackLabels: true,
   trackColorMode: 'level',
   trackEffects: true,
+  trackScreenFx: true,
+  trackFilters: true,
+  trackDecorations: false,
   cameraFollow: 5,
   chordDisplay: 'actual',
 };

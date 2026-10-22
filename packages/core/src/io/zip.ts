@@ -7,6 +7,25 @@ export interface ArchiveFile {
 
 export const AUDIO_EXT = /\.(ogg|mp3|wav|m4a|aac|flac|opus|webm)$/i;
 export const LEVEL_EXT = /\.adofai$/i;
+/** Images a level can show (decorations, backgrounds). */
+export const IMAGE_EXT = /\.(png|jpe?g|gif|bmp|webp)$/i;
+
+/** Zip file names without the UTF-8 flag are usually in the creator's code page (often CP949 here). */
+function decodeFileName(bytes: Uint8Array | string[] | string): string {
+  const data =
+    typeof bytes === 'string'
+      ? Uint8Array.from(bytes, (c) => c.charCodeAt(0) & 0xff)
+      : Uint8Array.from(bytes as ArrayLike<number>);
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(data);
+  } catch {
+    try {
+      return new TextDecoder('euc-kr').decode(data);
+    } catch {
+      return new TextDecoder('utf-8').decode(data);
+    }
+  }
+}
 
 const basename = (p: string) => p.split(/[\\/]/).pop() ?? p;
 const dirname = (p: string) => {
@@ -16,13 +35,13 @@ const dirname = (p: string) => {
 };
 
 export async function readZip(data: ArrayBuffer | Uint8Array): Promise<ArchiveFile[]> {
-  const zip = await JSZip.loadAsync(data);
+  const zip = await JSZip.loadAsync(data, { decodeFileName });
   const files: ArchiveFile[] = [];
   const entries = Object.values(zip.files).filter(
     (f) => !f.dir && !f.name.startsWith('__MACOSX/') && !basename(f.name).startsWith('._'),
   );
   for (const entry of entries) {
-    if (!LEVEL_EXT.test(entry.name) && !AUDIO_EXT.test(entry.name)) continue;
+    if (!LEVEL_EXT.test(entry.name) && !AUDIO_EXT.test(entry.name) && !IMAGE_EXT.test(entry.name)) continue;
     files.push({ path: entry.name, data: await entry.async('uint8array') });
   }
   return files;

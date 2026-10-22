@@ -1,5 +1,6 @@
 import type {
   BeatSection,
+  Decorations,
   FingeringProfile,
   FingeringResult,
   Lane,
@@ -7,11 +8,14 @@ import type {
   Timing,
   Track,
   TrackEffects,
+  Vfx,
 } from '@adofai-reading/core';
 import {
   analyzeRhythm,
   assignFingering,
+  buildDecorations,
   buildTrackEffects,
+  buildVfx,
   computeTrack,
   detectSections,
   resolveSections,
@@ -37,6 +41,9 @@ export interface ChartModel {
   noteAuto: Uint8Array;
   track: Track;
   effects: TrackEffects;
+  /** Screen effects (backgrounds, flashes, shakes, filters, bloom, planet easing). */
+  vfx: Vfx;
+  decorations: Decorations;
   /** Note times as drawn and judged: chords collapse onto their first note in "together" mode. */
   displayTimes: Float64Array;
 }
@@ -86,6 +93,11 @@ export function useChartModel(): ChartModel | null {
     [loaded],
   );
   const effects = useMemo(() => (loaded ? buildTrackEffects(loaded.level, loaded.timing) : null), [loaded]);
+  const vfx = useMemo(() => (loaded ? buildVfx(loaded.level, loaded.timing) : null), [loaded]);
+  const decorations = useMemo(
+    () => (loaded ? buildDecorations(loaded.level, loaded.timing, track) : null),
+    [loaded, track],
+  );
   const noteFloors = useMemo(() => Int32Array.from(loaded?.timing.notes ?? [], (n) => n.floor), [loaded]);
   const noteAuto = useMemo(
     () => Uint8Array.from(loaded?.timing.notes ?? [], (n) => (n.autoplay ? 1 : 0)),
@@ -116,7 +128,7 @@ export function useChartModel(): ChartModel | null {
   );
 
   return useMemo(() => {
-    if (!loaded || !analysis || !fingering || !effects) return null;
+    if (!loaded || !analysis || !fingering || !effects || !vfx || !decorations) return null;
     return {
       loaded,
       timing: loaded.timing,
@@ -131,6 +143,8 @@ export function useChartModel(): ChartModel | null {
       noteAuto,
       track,
       effects,
+      vfx,
+      decorations,
       displayTimes,
     };
   }, [
@@ -145,6 +159,8 @@ export function useChartModel(): ChartModel | null {
     noteAuto,
     track,
     effects,
+    vfx,
+    decorations,
     displayTimes,
   ]);
 }

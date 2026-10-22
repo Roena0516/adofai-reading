@@ -35,6 +35,8 @@ export interface Level {
   actions: LevelAction[];
   /** Actions grouped by floor (index 0..angles.length), in file order. */
   actionsByFloor: LevelAction[][];
+  /** Decorations listed apart from the actions (newer files); older files add them as actions. */
+  decorations: LevelAction[];
   source: 'angleData' | 'pathData';
   warnings: string[];
 }
@@ -133,5 +135,13 @@ export function parseLevel(text: string): Level {
   }
   if (outOfRange) warnings.push(`타일 범위를 벗어난 이벤트 ${outOfRange}개를 무시했습니다.`);
 
-  return { settings, rawSettings: s, angles, actions, actionsByFloor, source, warnings };
+  const rawDecorations = Array.isArray(obj.decorations) ? obj.decorations : [];
+  const decorations: LevelAction[] = [];
+  for (const d of rawDecorations) {
+    if (!d || typeof d !== 'object' || typeof (d as { eventType?: unknown }).eventType !== 'string') continue;
+    const floor = Math.trunc(Number((d as { floor?: unknown }).floor));
+    decorations.push({ ...(d as LevelAction), floor: Number.isFinite(floor) ? floor : 0 });
+  }
+
+  return { settings, rawSettings: s, angles, actions, actionsByFloor, decorations, source, warnings };
 }

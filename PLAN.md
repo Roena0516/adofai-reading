@@ -27,6 +27,13 @@
 - **이펙트 보정 (#1198, #1722)**: 행성과 카메라는 착지하는 순간의 타일 위치(MoveTrack 이동 포함)에 선다. stickToFloors는 그 뒤에도 타일을 따라갈지만 정한다. AnimateTrack의 나타나기 애니메이션은 자신이 다루는 값(Extend·Grow는 크기, Fade는 투명도, Assemble·Drop·Rise·Scatter는 위치)을 원래대로 돌려서, 미리 크기 0·투명도 0으로 숨긴 타일이 나타난다. 그 순간 진행 중인 MoveTrack이 있으면 그 값은 건드리지 않는다.
 - **사이드바 접기**: 헤더 버튼으로 숨기면 레인과 얼불춤 화면이 가로 전체를 쓴다.
 - **동타 표시**: 따닥을 실제 시각대로 또는 첫 노트 시각에 나란히 그리는 설정. 연습 판정도 같은 시각을 쓴다.
+- **얼불춤 화면 이펙트**:
+  - RepeatEvents를 펼친다. 태그가 붙은 이벤트는 같은 타일에서 반복될 때만 실행한다.
+  - 화면 효과: CustomBackground(이미지, 화면 맞춤·원본·타일 반복, 패럴랙스, 색), Flash(앞·뒤), ShakeScreen, SetPlanetRotation 이징.
+  - WebGL 필터 셰이더: SetFilter 24종과 Bloom, 모션 블러용 이전 프레임.
+  - 장식: AddDecoration, AddText, MoveDecorations, SetText. 기본 꺼짐.
+  - 손가락 배지는 필터 위 오버레이에 그린다. 레벨 zip의 이미지도 읽는다.
+  - 빠진 것: SetConditionalEvents, SetFilterAdvanced, 배경 영상, 장식 마스킹·히트박스.
 - 남은 것(M7): Hold 규칙 실레벨 검증, MultiPlanet·FreeRoam, Safari용 ogg 디코더.
 
 ## 1. 결정 사항

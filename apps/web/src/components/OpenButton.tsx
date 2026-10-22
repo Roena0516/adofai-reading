@@ -4,7 +4,7 @@ import { loadFiles } from '../chart/loader';
 import { useLevel } from '../stores/level';
 import { Button } from './ui';
 
-const ACCEPT = '.zip,.adofai,.ogg,.mp3,.wav,.m4a,.flac,.opus,.aac';
+const ACCEPT = '.zip,.adofai,.ogg,.mp3,.wav,.m4a,.flac,.opus,.aac,.png,.jpg,.jpeg,.gif,.bmp,.webp';
 
 export function OpenButton({ big = false }: { big?: boolean }) {
   const ref = useRef<HTMLInputElement>(null);

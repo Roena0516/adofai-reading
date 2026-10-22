@@ -5,6 +5,7 @@ import type { TrackLook } from './color';
 import { lookFrom } from './color';
 import type { EaseFn } from './ease';
 import { ease } from './ease';
+import { levelEvents } from './events';
 import { resolveFloor, vec2 } from './track';
 
 /** One MoveTrack applied to one tile. Channels: dx, dy, rotation, scaleX, scaleY, opacity (null = untouched). */
@@ -106,8 +107,9 @@ export function buildTrackEffects(level: Level, timing: Timing): TrackEffects {
   const animDur = new Float64Array(n + 1);
   let currentLook = 0;
 
+  const byFloor = levelEvents(level);
   for (let f = 0; f <= n; f++) {
-    for (const ev of level.actionsByFloor[f] ?? []) {
+    for (const ev of byFloor[f] ?? []) {
       if (ev.active === false) continue;
       switch (ev.eventType) {
         case 'MoveTrack': {

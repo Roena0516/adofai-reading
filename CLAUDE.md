@@ -32,7 +32,8 @@ pnpm 모노레포(pnpm 9). TypeScript는 6.0.3으로 고정한다. typescript-es
   - `timing/`: 타일 각도·BPM·Twirl·미드스핀·Pause·Hold → 노트 시각
   - `rhythm/`: 기준 BPM 구간 감지, 동타 묶기, 연타(run)·비트 분할·강박
   - `fingering/`: 레인 모델, 순서 문자열, 타법 프로필(스키마·마이그레이션), 기반별 키 수(`presets.ts`), 배정기(`assign.ts`)
-  - `track/`: 타일 배치(PositionTrack), MoveTrack·AnimateTrack·색 효과, 카메라 타임라인
+  - `track/`: 타일 배치(PositionTrack), MoveTrack·AnimateTrack·색 효과, 카메라 타임라인,
+    RepeatEvents 펼치기(`events.ts`), 화면 효과(`vfx.ts`), 장식(`decorations.ts`)
   - `practice/`: 레인 단위 판정, 통계
   - `test/`: vitest. `helpers.ts`의 `fakeTiming`, `beats`로 합성 채보를 만든다.
 - `apps/web`: React 19, Vite 8, Zustand 5(persist), Tailwind 4, lucide-react
@@ -104,11 +105,47 @@ pnpm 모노레포(pnpm 9). TypeScript는 6.0.3으로 고정한다. typescript-es
 
 ### 얼불춤 화면 (`track/`, `render/trackRenderer.ts`)
 
-- 타일은 두께 0.58의 다각형이고 모서리는 각지게 잇는다. 두 팔 사이 각이 50° 미만이면 뒤를 둥글게 한다.
+- 타일은 두께 0.58의 다각형이고 모서리는 각지게 잇는다. 두 팔 사이 각이 70° 미만(15°~60° 타일)이면 뒤를
+  둥글게 한다. 60°는 사용자가 둥글다고 확인했다. 75°는 아직 각지게 둔다(확인 전).
 - 나중 타일을 먼저 그려서 앞 타일이 위에 오게 한다. 줌 100%에서 화면 높이에 약 6.5타일이 들어간다.
-- 장식(AddDecoration 등)은 그리지 않는다. 카메라 이동, MoveTrack, AnimateTrack, 트랙 색은 적용한다.
-- 행성과 카메라는 착지하는 순간의 타일 위치(MoveTrack 이동 포함)에 선다. `stickToFloors`는 착지한 뒤에도
-  타일을 따라갈지만 정한다.
+- 카메라 이동, MoveTrack, AnimateTrack, 트랙 색을 적용한다. 시간에 따라 바뀌는 효과는 모두
+  `levelEvents(level)`를 읽는다. 여기서 RepeatEvents를 펼친다. eventTag가 붙은 이벤트는 같은 타일의
+  RepeatEvents가 그 태그를 반복할 때만 실행한다. 나머지는 판정(SetConditionalEvents)이나 장식 히트박스가
+  부를 때만 실행되는 것으로 보고 뺀다. 근거는 Timeline의 1번 타일 "유다희" 죽음 연출과 "뿌슝빠슝" 이벤트,
+  그리고 Feral이 태그 "none"으로 이벤트를 끄는 방식이다. 반복하는 RepeatEvents가 모두
+  executeOnCurrentFloor: false면 원래 시각에는 실행하지 않고 반복분만 실행한다. CustomBackground의 크기는
+  `scalingRatio`(새 레벨)나 `unscaledSize`다. Compression 필터는 옅은 블록만 남긴다.
+- 화면 효과(`buildVfx`)는 배경(CustomBackground), 플래시, 화면 흔들림, 블룸, 필터(SetFilter),
+  행성 회전 이징(SetPlanetRotation)이다. 플래시는 끝난 뒤에도 끝 색을 유지한다.
+- 필터와 블룸은 `render/postfx.ts`의 WebGL 셰이더 한 장으로 2D 프레임 위에 덧그린다. 게임 셰이더의
+  근사치다. 모르는 필터는 비슷한 것으로 대신하거나(`ALIASES`) 무시한다. SetFilterAdvanced는 지원하지 않는다.
+  셰이더의 픽셀 단위(눈 입자, 주사선, LED 칸)는 CSS 픽셀이다. Neon은 평평한 곳을 (흰색이어도) 검게 하고 윤곽만
+  밝은 쪽 색으로 빛나게 한다. Feral [Insane] #582 게임 화면과 비교해서 맞췄다. Arcade는 주사선만 넣고 픽셀화하지
+  않는다. Fisheye는 약하게(Feral Fisheye 48에서 옆 막대가 거의 곧다).
+- 필터가 타일과 행성을 가리면 안 된다. 사용자가 Feral [Insane] 마지막 파트(MotionBlur 1000)에서 지적했다.
+  모션 블러는 이전 프레임을 시간 기준으로 섞되 밝게만 남기고(지금 프레임은 그대로 선명), 비중은
+  `motionTrail`이 최대 0.55로 제한한다.
+- 손가락 배지는 별도 오버레이 캔버스에 그린다. 그래서 필터와 플래시가 손가락 색을 바꾸지 않고, 행성보다 위에
+  온다. 이미 친 노트의 배지는 그리지 않는다.
+- 장식(AddDecoration, AddText, `decorations` 배열, MoveDecorations, SetText)은 설정에서 켜야 보인다
+  (기본 꺼짐). 사용자가 채보를 가린다고 해서다. 이미지 150px이 1타일이다. 장식은 depth와 상관없이 모두
+  배경(배경 플래시 포함)과 타일 사이에 그리고, depth는 장식끼리의 순서만 정한다(작을수록 앞).
+  Feral #582(depth 0 상자)와 #1487(depth −1 검은 막대) 게임 화면에서 타일과 행성이 장식 위에 있다.
+  pivotOffset은 장식 자신의 좌표(회전·크기 적용)에서 이미지를 position으로부터 옮긴다. Feral #1485의
+  1000% 막대 두 개(pivot −1.2, 회전 0°·180°)가 좌우로 12타일씩 벌어져 가운데 청록 패널을 감싼다.
+  Nyan Cat 무지개(pivot −0.056, 24000%)와 Timeline 마법진(위성 8개)도 이 규칙에서 게임과 같다.
+  parallax는 장식의 기준점(타일 기준이면 그 타일, Global이면 원점)에서 잰다: x + (카메라 − 기준점) × parallax.
+  원점에서 재면 트랙을 따라 멀리 있는 장식이 화면 밖으로 밀린다(Feral #1196의 −20% 옆 막대). 나란히 놓은
+  장식의 간격은 그대로다(Feral fakebg1 8장이 이미지 폭 간격).
+- 배경 이미지: Unscaled + loopBG와 Tiled는 화면을 덮도록 반복한다. 크기는 장식과 같은 150px = 1타일 ×
+  unscaledSize이고 카메라 줌을 따른다(Feral #1301 쉐브론 주기로 확인).
+- 이미지(장식, 배경)는 레벨 zip이나 함께 드롭한 파일에서 읽는다(`render/levelImages.ts`).
+- 올린 파일에 .adofai가 여러 개면(난이도별 레벨 등) 열기 전에 고르게 한다(`LevelPicker`, `chooseLevel`).
+  에디터 자동 백업 `backup.adofai`는 후보에서 뺀다.
+- 설정: `trackScreenFx`(화면 효과), `trackFilters`(필터·블룸), `trackDecorations`(장식, 기본 꺼짐).
+- 행성과, 행성을 따라가는 카메라(Player)는 착지하는 순간의 타일 위치(MoveTrack 이동 포함)에 선다.
+  `stickToFloors`는 착지한 뒤에도 타일을 따라갈지만 정한다. MoveCamera relativeTo Tile은 에디터에 놓인 원래
+  타일 위치를 쓴다. Timeline #508은 타일을 70타일 치워 둔 채 원래 자리의 마법진을 비춘다.
 - 나타나기 애니메이션은 자신이 다루는 값을 원래대로 돌린다. Extend·Grow는 크기, Fade는 투명도,
   Assemble·Drop·Rise·Scatter는 위치다. 미리 크기 0이나 투명도 0으로 숨긴 타일이 이렇게 나타난다.
   그 순간 진행 중인 MoveTrack이 있으면 그 값은 건드리지 않는다.

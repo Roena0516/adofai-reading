@@ -1,6 +1,7 @@
 import type { ArchiveFile } from '@adofai-reading/core';
 import {
   AUDIO_EXT,
+  IMAGE_EXT,
   LEVEL_EXT,
   computeTiming,
   decodeText,
@@ -12,25 +13,61 @@ import { engine } from '../audio/engine';
 import { hashString } from '../lib/format';
 import { usePlayer } from '../stores/player';
 import { usePractice } from '../stores/practice';
-import type { LoadedLevel } from '../stores/level';
+import type { LevelOption, LoadedLevel } from '../stores/level';
 import { useLevel } from '../stores/level';
 
 async function collect(files: File[]): Promise<ArchiveFile[]> {
   const out: ArchiveFile[] = [];
   for (const f of files) {
     if (/\.zip$/i.test(f.name)) out.push(...(await readZip(await f.arrayBuffer())));
-    else if (LEVEL_EXT.test(f.name) || AUDIO_EXT.test(f.name)) {
+    else if (LEVEL_EXT.test(f.name) || AUDIO_EXT.test(f.name) || IMAGE_EXT.test(f.name)) {
       out.push({ path: f.name, data: new Uint8Array(await f.arrayBuffer()) });
     }
   }
   return out;
 }
 
+/** The editor's autosave next to the real level; never offered unless it is the only one. */
+const isBackup = (path: string) => /(^|\/)backup\.adofai$/i.test(path);
+
+function describe(file: ArchiveFile): LevelOption {
+  const base = {
+    path: file.path,
+    song: '',
+    artist: '',
+    author: '',
+    difficulty: null,
+    notes: 0,
+    bpm: 0,
+    length: 0,
+  };
+  try {
+    const level = parseLevel(decodeText(file.data));
+    const timing = computeTiming(level);
+    const notes = timing.notes;
+    const difficulty = Number(level.rawSettings.difficulty);
+    return {
+      ...base,
+      song: level.settings.song,
+      artist: level.settings.artist,
+      author: level.settings.author,
+      difficulty: Number.isFinite(difficulty) && difficulty > 0 ? difficulty : null,
+      notes: notes.length,
+      bpm: level.settings.bpm,
+      length: notes.length ? notes[notes.length - 1]!.time - notes[0]!.time : 0,
+      error: notes.length ? null : '노트가 없습니다',
+    };
+  } catch (e) {
+    return { ...base, error: (e as Error).message };
+  }
+}
+
 async function build(archive: ArchiveFile[], preferPath?: string): Promise<LoadedLevel> {
   const levels = archive.filter((f) => LEVEL_EXT.test(f.path));
   if (!levels.length)
     throw new Error('.adofai 파일을 찾지 못했습니다. 레벨 zip이나 .adofai 파일을 넣어 주세요.');
-  const chosen = levels.find((l) => l.path === preferPath) ?? levels[0]!;
+  const chosen =
+    levels.find((l) => l.path === preferPath) ?? levels.find((l) => !isBackup(l.path)) ?? levels[0]!;
   const text = decodeText(chosen.data);
   const level = parseLevel(text);
   const timing = computeTiming(level);
@@ -77,8 +114,32 @@ async function run(task: () => Promise<LoadedLevel>): Promise<void> {
   }
 }
 
-export function loadFiles(files: File[]): Promise<void> {
-  return run(async () => build(await collect(files)));
+/** Open dropped or picked files. With several levels inside, ask which one first (see LevelPicker). */
+export async function loadFiles(files: File[]): Promise<void> {
+  const store = useLevel.getState();
+  store.set({ loading: true, error: null, choice: null });
+  let archive: ArchiveFile[];
+  try {
+    archive = await collect(files);
+  } catch (e) {
+    store.set({ loading: false, error: (e as Error).message });
+    return;
+  }
+  const levels = archive.filter((f) => LEVEL_EXT.test(f.path) && !isBackup(f.path));
+  if (levels.length > 1) {
+    const options = levels.map(describe).sort((a, b) => a.notes - b.notes || a.path.localeCompare(b.path));
+    store.set({ loading: false, choice: { archive, options } });
+    return;
+  }
+  return run(async () => build(archive));
+}
+
+/** Open one of the levels offered after an upload. */
+export function chooseLevel(path: string): Promise<void> {
+  const choice = useLevel.getState().choice;
+  if (!choice) return Promise.resolve();
+  useLevel.getState().set({ choice: null });
+  return run(() => build(choice.archive, path));
 }
 
 export function switchLevel(path: string): Promise<void> {

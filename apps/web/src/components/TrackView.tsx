@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef } from 'react';
 import { seek } from '../chart/controls';
 import { engine } from '../audio/engine';
 import { useChart } from '../chart/model';
+import { LevelImages } from '../render/levelImages';
+import { PostFx, postFxActive } from '../render/postfx';
 import { TrackRenderer } from '../render/trackRenderer';
 import { useSettings } from '../stores/settings';
 import { Button, Segmented } from './ui';
@@ -14,10 +16,23 @@ export function TrackView({ leftInset = 0 }: { leftInset?: number }) {
   const scale = useSettings((s) => s.trackScale);
   const colorMode = useSettings((s) => s.trackColorMode);
   const effects = useSettings((s) => s.trackEffects);
+  const decorations = useSettings((s) => s.trackDecorations);
   const follow = useSettings((s) => s.cameraFollow);
   const set = useSettings((s) => s.set);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const glRef = useRef<HTMLCanvasElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
+
+  const images = useMemo(
+    () => new LevelImages(model.loaded.archive, model.loaded.levelPath),
+    [model.loaded.archive, model.loaded.levelPath],
+  );
+  useEffect(() => () => images.dispose(), [images]);
+  useEffect(() => {
+    images.preload(model.vfx.images);
+    if (decorations) images.preload(model.decorations.images);
+  }, [images, model.vfx, model.decorations, decorations]);
 
   const camera = useMemo(
     () =>
@@ -27,11 +42,13 @@ export function TrackView({ leftInset = 0 }: { leftInset?: number }) {
       }),
     [model.loaded.level, model.timing, model.track, model.effects, effects, follow],
   );
-  const live = useRef({ model, camera, leftInset, width: 0 });
-  live.current = { ...live.current, model, camera, leftInset };
+  const live = useRef({ model, camera, leftInset, images, width: 0 });
+  live.current = { ...live.current, model, camera, leftInset, images };
 
   useEffect(() => {
-    const r = new TrackRenderer(canvasRef.current!);
+    const r = new TrackRenderer(canvasRef.current!, overlayRef.current);
+    const gl = glRef.current!;
+    const post = new PostFx(gl);
     const ro = new ResizeObserver(() => {
       const rect = wrapRef.current!.getBoundingClientRect();
       live.current.width = rect.width;
@@ -39,16 +56,37 @@ export function TrackView({ leftInset = 0 }: { leftInset?: number }) {
     });
     ro.observe(wrapRef.current!);
     let raf = 0;
+    let lastFrame = performance.now();
     const tick = () => {
       raf = requestAnimationFrame(tick);
       const s = useSettings.getState();
-      r.draw(live.current.model, live.current.camera, engine.now() - s.visualOffsetMs / 1000, {
+      const { model: m, camera: cam, images: img } = live.current;
+      const t = engine.now() - s.visualOffsetMs / 1000;
+      const state = (s.trackScreenFx || s.trackFilters) && m.vfx.any ? m.vfx.at(t) : null;
+      r.draw(m, cam, t, {
         scale: s.trackScale,
         labels: s.trackLabels,
         colorMode: s.trackColorMode,
         effects: s.trackEffects,
         centerX: live.current.leftInset + (live.current.width - live.current.leftInset) / 2,
+        vfx: s.trackScreenFx ? state : null,
+        planetEase: s.trackScreenFx,
+        decorations: s.trackDecorations,
+        images: img,
       });
+      const filtered = !!state && s.trackFilters && post.supported && postFxActive(state);
+      const now = performance.now();
+      const dt = (now - lastFrame) / 1000;
+      lastFrame = now;
+      if (filtered)
+        post.render(r.frame, {
+          filters: state.filters,
+          bloom: state.bloom,
+          time: t,
+          dt,
+          pixelRatio: window.devicePixelRatio || 1,
+        });
+      gl.style.visibility = filtered ? 'visible' : 'hidden';
     };
     raf = requestAnimationFrame(tick);
     return () => {
@@ -69,6 +107,8 @@ export function TrackView({ leftInset = 0 }: { leftInset?: number }) {
       }}
     >
       <canvas ref={canvasRef} className="absolute inset-0" />
+      <canvas ref={glRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+      <canvas ref={overlayRef} className="pointer-events-none absolute inset-0" />
       <div className="absolute right-3 bottom-3 flex flex-col items-end gap-1.5 rounded-xl bg-canvas/85 px-2.5 py-2 text-xs text-ink-soft shadow-[0_0_0_1px_var(--color-border-soft)] backdrop-blur">
         <div className="flex items-center gap-1">
           <span className="mr-1 font-medium text-ink">얼불춤 화면</span>

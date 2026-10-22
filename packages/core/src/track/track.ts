@@ -111,14 +111,23 @@ export function floorAt(timing: Pick<Timing, 'tiles'>, t: number): number {
   return k;
 }
 
-/** Where the two planets are at song time t. */
-export function planetsAt(timing: Pick<Timing, 'tiles'>, track: Track, t: number): PlanetState {
+/**
+ * Where the two planets are at song time t. `ease` maps the linear share of a floor's turn to the
+ * share actually done (SetPlanetRotation); the planet still reaches the next floor on time.
+ */
+export function planetsAt(
+  timing: Pick<Timing, 'tiles'>,
+  track: Track,
+  t: number,
+  ease?: (floor: number, u: number) => number,
+): PlanetState {
   const k = floorAt(timing, t);
   const tile = timing.tiles[k]!;
   let progress = 0;
   if (tile.duration > 0) {
     const total = tile.rotation + tile.pauseBeats * 180 + tile.holdTurns * 360;
-    progress = Math.min(total, (Math.max(0, t - tile.time) / tile.duration) * total);
+    const u = Math.min(1, Math.max(0, t - tile.time) / tile.duration);
+    progress = (ease ? ease(k, u) : u) * total;
   }
   const angle = tile.entry + (tile.clockwise ? -progress : progress);
   return { floor: k, pivotX: track.x[k]!, pivotY: track.y[k]!, angle, pivotPlanet: (k % 2) as 0 | 1 };

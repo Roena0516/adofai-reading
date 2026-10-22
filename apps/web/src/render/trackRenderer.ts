@@ -1,5 +1,6 @@
-import type { CameraTimeline, TileState } from '@adofai-reading/core';
+import type { CameraTimeline, DecorationState, RGBA, TileState, VfxState } from '@adofai-reading/core';
 import {
+  DECORATION_PX_PER_TILE,
   floorAt,
   laneLabel,
   lookColor,
@@ -11,6 +12,7 @@ import {
 } from '@adofai-reading/core';
 import type { ChartModel } from '../chart/model';
 import { laneColor } from './colors';
+import type { LevelImages } from './levelImages';
 
 const FONT = '"Pretendard", "Apple SD Gothic Neo", system-ui, sans-serif';
 /** Tiles visible top to bottom at camera zoom 100 %. */
@@ -20,8 +22,11 @@ const TRACK_W = 0.58;
 const ARM = 0.5;
 const OUTLINE = 0.03;
 const PLANET_R = 0.21;
-/** Turns sharper than this (angle between the two arms) get a round back, like the game's 15°–45° tiles. */
-const ROUND_BELOW = (50 * Math.PI) / 180;
+/**
+ * Turns sharper than this (angle between the two arms) get a round back, like the game's 15°–60° tiles
+ * (the user confirmed 60°). A mitre would stick out past the tile there; 75° tiles stay mitred.
+ */
+const ROUND_BELOW = (70 * Math.PI) / 180;
 const MITER_LIMIT = 3;
 const FIRE = '#ff4f45';
 const ICE = '#3f8cff';
@@ -36,7 +41,37 @@ export interface TrackDrawOptions {
   effects: boolean;
   /** Horizontal centre of the visible area in CSS px (the lanes may cover the left part). */
   centerX?: number;
+  /** Screen effects at this time (background, flashes, shake), or null to draw without them. */
+  vfx?: VfxState | null;
+  /** Ease the planet's turn like SetPlanetRotation. */
+  planetEase?: boolean;
+  decorations?: boolean;
+  images?: LevelImages | null;
 }
+
+const FONTS: Record<string, string> = {
+  Default: FONT,
+  Arial: 'Arial, sans-serif',
+  ComicSansMS: '"Comic Sans MS", "Comic Sans", cursive',
+  CourierNew: '"Courier New", monospace',
+  Georgia: 'Georgia, serif',
+  Impact: 'Impact, sans-serif',
+  TimesNewRoman: '"Times New Roman", serif',
+  NotoSans: '"Noto Sans", "Noto Sans KR", sans-serif',
+};
+
+const BLENDS: Record<string, GlobalCompositeOperation> = {
+  Additive: 'lighter',
+  Add: 'lighter',
+  Multiply: 'multiply',
+  Screen: 'screen',
+  Overlay: 'overlay',
+  Darken: 'darken',
+  Lighten: 'lighten',
+};
+
+const rgba = (c: RGBA, a = 1) =>
+  `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${Math.max(0, Math.min(1, c[3] * a))})`;
 
 interface FloorMarks {
   note: Int32Array;
@@ -110,8 +145,14 @@ export class TrackRenderer {
   private laneRgb: RGB[] = [];
   private readonly state: TileState = { dx: 0, dy: 0, rot: 0, sx: 1, sy: 1, opacity: 1 };
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
+  private readonly overlayCtx: CanvasRenderingContext2D | null;
+
+  constructor(
+    private readonly canvas: HTMLCanvasElement,
+    private readonly overlay: HTMLCanvasElement | null = null,
+  ) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
+    this.overlayCtx = overlay?.getContext('2d') ?? null;
   }
 
   resize(w: number, h: number, dpr: number): void {
@@ -122,6 +163,17 @@ export class TrackRenderer {
     this.canvas.height = Math.round(h * dpr);
     this.canvas.style.width = `${w}px`;
     this.canvas.style.height = `${h}px`;
+    if (this.overlay) {
+      this.overlay.width = this.canvas.width;
+      this.overlay.height = this.canvas.height;
+      this.overlay.style.width = `${w}px`;
+      this.overlay.style.height = `${h}px`;
+    }
+  }
+
+  /** The finished frame (for the screen-filter pass). */
+  get frame(): HTMLCanvasElement {
+    return this.canvas;
   }
 
   private floorMarks(model: ChartModel): FloorMarks {
@@ -234,14 +286,18 @@ export class TrackRenderer {
     const n = tiles.length - 1;
     const marks = this.floorMarks(model);
     const view = camera.at(time);
+    const vfx = opts.vfx ?? null;
+    const camX = view.x + (vfx ? vfx.shake[0] : 0);
+    const camY = view.y + (vfx ? vfx.shake[1] : 0);
     const px = (this.h / VIEW_TILES) * (100 / view.zoom) * (opts.scale / 100);
+    const pxUnzoomed = (this.h / VIEW_TILES) * (opts.scale / 100);
     const rot = (-view.rotation * Math.PI) / 180;
     const cr = Math.cos(rot);
     const sr = Math.sin(rot);
     const cx0 = opts.centerX ?? this.w / 2;
     const cy0 = this.h / 2;
-    const sx = (wx: number, wy: number) => cx0 + ((wx - view.x) * cr - (wy - view.y) * sr) * px;
-    const sy = (wx: number, wy: number) => cy0 - ((wx - view.x) * sr + (wy - view.y) * cr) * px;
+    const sx = (wx: number, wy: number) => cx0 + ((wx - camX) * cr - (wy - camY) * sr) * px;
+    const sy = (wx: number, wy: number) => cy0 - ((wx - camX) * sr + (wy - camY) * cr) * px;
     const dirOf = (a: number): [number, number] => [
       Math.cos(a) * cr - Math.sin(a) * sr,
       -(Math.cos(a) * sr + Math.sin(a) * cr),
@@ -250,10 +306,63 @@ export class TrackRenderer {
     const deg = Math.PI / 180;
 
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    c.globalAlpha = 1;
+    c.globalCompositeOperation = 'source-over';
     const bgLevel = fx.backgroundColor;
     const bg: RGB = bgLevel[0] + bgLevel[1] + bgLevel[2] === 0 ? [12, 12, 14] : bgLevel;
     c.fillStyle = css(bg);
     c.fillRect(0, 0, this.w, this.h);
+    if (vfx) {
+      const b = vfx.background;
+      if (b.color[0] + b.color[1] + b.color[2] > 0 || b.image) {
+        c.fillStyle = rgba(b.color);
+        c.fillRect(0, 0, this.w, this.h);
+      }
+      if (b.image && opts.images)
+        this.drawBackgroundImage(b, opts.images, camX, camY, rot, px, cx0, cy0, sx, sy);
+      if (vfx.flashBack) {
+        c.fillStyle = rgba(vfx.flashBack);
+        c.fillRect(0, 0, this.w, this.h);
+      }
+    }
+
+    // planets first (decorations can follow them), drawn after the tiles
+    const pl = planetsAt(timing, track, time, opts.planetEase ? model.vfx.planetProgress : undefined);
+    let pivotX = pl.pivotX;
+    let pivotY = pl.pivotY;
+    if (opts.effects) {
+      const at = fx.stickToFloors ? time : timing.tiles[pl.floor]!.time;
+      const st = tileStateAt(fx, pl.floor, at, this.state);
+      pivotX += st.dx;
+      pivotY += st.dy;
+    }
+    const pa = pl.angle * (Math.PI / 180);
+    const otherX = pivotX + Math.cos(pa);
+    const otherY = pivotY + Math.sin(pa);
+    const red: [number, number] = pl.pivotPlanet === 0 ? [pivotX, pivotY] : [otherX, otherY];
+    const blue: [number, number] = pl.pivotPlanet === 0 ? [otherX, otherY] : [pivotX, pivotY];
+
+    // Decorations sit between the background (and its flash) and the track: tiles and planets are always
+    // in front, whatever the depth (Feral #1487's depth −1 black bars and #582's depth 0 box are behind
+    // them in the game). Depth only orders decorations among themselves, lower in front.
+    if (opts.decorations && opts.images) {
+      const decos = model.decorations
+        .at(time)
+        .filter((d) => d.visible && d.opacity * d.color[3] > 0.004 && d.sx !== 0 && d.sy !== 0)
+        .sort((a, b) => b.deco.depth - a.deco.depth || a.deco.index - b.deco.index);
+      this.drawDecorations(decos, {
+        camX,
+        camY,
+        rot,
+        px,
+        pxUnzoomed,
+        sx,
+        sy,
+        red,
+        blue,
+        images: opts.images,
+      });
+    }
 
     const nextNoteIdx = upperBound(timing.noteTimes, time + 1e-4);
     const lastLabelled = nextNoteIdx + 64;
@@ -369,64 +478,11 @@ export class TrackRenderer {
       drawn.push({ f, x, y, s: scale, alpha });
     }
 
-    // Finger badges (our overlay), again earliest on top
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    for (const d of drawn) {
-      const { f, x, y } = d;
-      const ni = marks.note[f]!;
-      if (!opts.labels || ni < 0 || f < k || ni >= lastLabelled || model.noteAuto[ni]) continue;
-      const lane = fingering.noteLane[ni]!;
-      const ln = lanes[lane];
-      if (!ln) continue;
-      c.globalAlpha = d.alpha;
-      const hasIcon = marks.twirl[f] || marks.speed[f];
-      const r = Math.max(6, 0.15 * d.s * px);
-      const bx = hasIcon ? x + 0.2 * d.s * px : x;
-      const by = hasIcon ? y - 0.2 * d.s * px : y;
-      if (opts.colorMode === 'level' || hasIcon) {
-        c.fillStyle = laneColor(ln);
-        c.beginPath();
-        c.arc(bx, by, r, 0, Math.PI * 2);
-        c.fill();
-        c.strokeStyle = 'rgba(12,12,14,0.85)';
-        c.lineWidth = 1.5;
-        c.stroke();
-      }
-      if (r >= 7) {
-        c.font = `700 ${Math.round(r * 1.25)}px ${FONT}`;
-        c.fillStyle = 'rgba(16,14,18,0.92)';
-        c.fillText(String(lane + 1), bx, by + 0.5);
-      }
-      if (ni === nextNoteIdx) {
-        c.strokeStyle = '#ffffff';
-        c.lineWidth = 2;
-        c.beginPath();
-        c.arc(bx, by, r + 4, 0, Math.PI * 2);
-        c.stroke();
-        c.font = `600 12px ${FONT}`;
-        c.fillStyle = laneColor(ln);
-        c.textAlign = 'left';
-        c.fillText(laneLabel(ln), bx + r + 8, by - r - 4);
-        c.textAlign = 'center';
-      }
-    }
-    c.globalAlpha = 1;
-
     // Planets: the pivot lands where its tile is at that moment, and keeps following the tile only
     // when the level sticks planets to floors.
-    const pl = planetsAt(timing, track, time);
-    let pivotX = pl.pivotX;
-    let pivotY = pl.pivotY;
-    if (opts.effects) {
-      const at = fx.stickToFloors ? time : timing.tiles[pl.floor]!.time;
-      const st = tileStateAt(fx, pl.floor, at, this.state);
-      pivotX += st.dx;
-      pivotY += st.dy;
-    }
-    const a = pl.angle * deg;
-    const ox = pivotX + Math.cos(a);
-    const oy = pivotY + Math.sin(a);
+    c.globalAlpha = 1;
+    const ox = otherX;
+    const oy = otherY;
     const planet = (wx: number, wy: number, color: string) => {
       const x = sx(wx, wy);
       const y = sy(wx, wy);
@@ -446,5 +502,199 @@ export class TrackRenderer {
     };
     planet(pivotX, pivotY, pl.pivotPlanet === 0 ? FIRE : ICE);
     planet(ox, oy, pl.pivotPlanet === 0 ? ICE : FIRE);
+
+    if (vfx?.flashFront) {
+      c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      c.globalAlpha = 1;
+      c.fillStyle = rgba(vfx.flashFront);
+      c.fillRect(0, 0, this.w, this.h);
+    }
+
+    // Finger badges (our overlay), again earliest on top. They go on their own canvas when there is
+    // one, so screen filters and flashes never change the finger colours.
+    const b = this.overlayCtx ?? c;
+    if (this.overlayCtx) {
+      b.setTransform(1, 0, 0, 1, 0, 0);
+      b.clearRect(0, 0, this.overlay!.width, this.overlay!.height);
+    }
+    b.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    b.globalCompositeOperation = 'source-over';
+    b.textAlign = 'center';
+    b.textBaseline = 'middle';
+    for (const d of drawn) {
+      const { f, x, y } = d;
+      const ni = marks.note[f]!;
+      // only notes still to play: the badge of the tile a planet already stands on would cover it
+      if (!opts.labels || ni < nextNoteIdx || ni >= lastLabelled || model.noteAuto[ni]) continue;
+      const lane = fingering.noteLane[ni]!;
+      const ln = lanes[lane];
+      if (!ln) continue;
+      b.globalAlpha = d.alpha;
+      const hasIcon = marks.twirl[f] || marks.speed[f];
+      const r = Math.max(6, 0.15 * d.s * px);
+      const bx = hasIcon ? x + 0.2 * d.s * px : x;
+      const by = hasIcon ? y - 0.2 * d.s * px : y;
+      if (opts.colorMode === 'level' || hasIcon) {
+        b.fillStyle = laneColor(ln);
+        b.beginPath();
+        b.arc(bx, by, r, 0, Math.PI * 2);
+        b.fill();
+        b.strokeStyle = 'rgba(12,12,14,0.85)';
+        b.lineWidth = 1.5;
+        b.stroke();
+      }
+      if (r >= 7) {
+        b.font = `700 ${Math.round(r * 1.25)}px ${FONT}`;
+        b.fillStyle = 'rgba(16,14,18,0.92)';
+        b.fillText(String(lane + 1), bx, by + 0.5);
+      }
+      if (ni === nextNoteIdx) {
+        b.strokeStyle = '#ffffff';
+        b.lineWidth = 2;
+        b.beginPath();
+        b.arc(bx, by, r + 4, 0, Math.PI * 2);
+        b.stroke();
+        b.font = `600 12px ${FONT}`;
+        b.fillStyle = laneColor(ln);
+        b.textAlign = 'left';
+        b.fillText(laneLabel(ln), bx + r + 8, by - r - 4);
+        b.textAlign = 'center';
+      }
+    }
+    b.globalAlpha = 1;
+  }
+
+  /** The level's background image: covering the screen, at world size, or tiled, with parallax. */
+  private drawBackgroundImage(
+    b: VfxState['background'],
+    images: LevelImages,
+    camX: number,
+    camY: number,
+    rot: number,
+    px: number,
+    cx0: number,
+    cy0: number,
+    sx: (x: number, y: number) => number,
+    sy: (x: number, y: number) => number,
+  ): void {
+    const img = images.getTinted(b.image, b.imageColor[0], b.imageColor[1], b.imageColor[2]);
+    if (!img) return;
+    const c = this.ctx;
+    const iw = (img as { width: number }).width;
+    const ih = (img as { height: number }).height;
+    c.save();
+    c.globalAlpha = b.imageColor[3];
+    if (b.mode === 'Unscaled' || b.mode === 'Tiled') {
+      const tw = (iw / DECORATION_PX_PER_TILE) * (b.unscaledSize / 100) * px;
+      const th = (ih / DECORATION_PX_PER_TILE) * (b.unscaledSize / 100) * px;
+      const wx = camX * (b.parallax[0] / 100);
+      const wy = camY * (b.parallax[1] / 100);
+      const ax = sx(wx, wy);
+      const ay = sy(wx, wy);
+      const r = b.lockRot ? 0 : rot;
+      c.translate(ax, ay);
+      c.rotate(-r);
+      if (b.mode === 'Unscaled' && !b.loop) {
+        c.drawImage(img, -tw / 2, -th / 2, tw, th);
+      } else if (tw > 2 && th > 2) {
+        // repeat around the anchor (Tiled, or Unscaled with loopBG) far enough to cover the turned view
+        const dx = cx0 - ax;
+        const dy = cy0 - ay;
+        const lx = dx * Math.cos(r) - dy * Math.sin(r);
+        const ly = dx * Math.sin(r) + dy * Math.cos(r);
+        const reach = Math.hypot(this.w, this.h);
+        const i0 = Math.floor((lx - reach) / tw + 0.5);
+        const i1 = Math.ceil((lx + reach) / tw + 0.5);
+        const j0 = Math.floor((ly - reach) / th + 0.5);
+        const j1 = Math.ceil((ly + reach) / th + 0.5);
+        if ((i1 - i0) * (j1 - j0) <= 900)
+          for (let i = i0; i <= i1; i++)
+            for (let j = j0; j <= j1; j++) c.drawImage(img, (i - 0.5) * tw, (j - 0.5) * th, tw, th);
+      }
+    } else {
+      // FitToScreen (and anything else): cover the view
+      const k = Math.max(this.w / iw, this.h / ih);
+      c.drawImage(img, (this.w - iw * k) / 2, (this.h - ih * k) / 2, iw * k, ih * k);
+    }
+    c.restore();
+  }
+
+  /** Decoration images and text, already sorted back to front. */
+  private drawDecorations(
+    list: DecorationState[],
+    v: {
+      camX: number;
+      camY: number;
+      rot: number;
+      px: number;
+      pxUnzoomed: number;
+      sx: (x: number, y: number) => number;
+      sy: (x: number, y: number) => number;
+      red: [number, number];
+      blue: [number, number];
+      images: LevelImages;
+    },
+  ): void {
+    const c = this.ctx;
+    for (const d of list) {
+      let wx: number;
+      let wy: number;
+      if (d.anchor === 'redPlanet' || d.anchor === 'bluePlanet') {
+        const p = d.anchor === 'redPlanet' ? v.red : v.blue;
+        wx = p[0] + d.x;
+        wy = p[1] + d.y;
+      } else if (d.anchor === 'camera') {
+        wx = v.camX + d.x;
+        wy = v.camY + d.y;
+      } else {
+        wx = d.x + (v.camX - d.ref[0]) * (d.parallax[0] / 100);
+        wy = d.y + (v.camY - d.ref[1]) * (d.parallax[1] / 100);
+      }
+      const x = v.sx(wx, wy);
+      const y = v.sy(wx, wy);
+      const unit = d.deco.lockScale ? v.pxUnzoomed : v.px;
+      let w: number;
+      let h: number;
+      let img: CanvasImageSource | null = null;
+      if (d.deco.kind === 'image') {
+        img = v.images.getTinted(d.image, d.color[0], d.color[1], d.color[2]);
+        if (!img) continue;
+        w = ((img as { width: number }).width / DECORATION_PX_PER_TILE) * Math.abs(d.sx) * unit;
+        h = ((img as { height: number }).height / DECORATION_PX_PER_TILE) * Math.abs(d.sy) * unit;
+      } else {
+        w = h = 0.6 * Math.abs(d.sy) * unit;
+      }
+      const reach =
+        Math.max(w * d.deco.tile[0], h * d.deco.tile[1]) +
+        Math.hypot(d.deco.pivot[0] * d.sx, d.deco.pivot[1] * d.sy) * unit;
+      if (x < -reach || x > this.w + reach || y < -reach || y > this.h + reach) continue;
+
+      c.save();
+      c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      c.globalAlpha = Math.min(1, d.opacity * d.color[3]);
+      c.globalCompositeOperation = BLENDS[d.deco.blend] ?? 'source-over';
+      c.imageSmoothingEnabled = d.deco.smooth;
+      c.translate(x, y);
+      const r = (d.rotation * Math.PI) / 180 + (d.deco.lockRotation ? 0 : v.rot);
+      c.rotate(-r);
+      // the pivot offset moves the image away from its position in the decoration's own (rotated, scaled)
+      // space: Feral #1485's two 1000% bars with offset −1.2 end up 12 tiles to either side
+      c.translate(d.deco.pivot[0] * d.sx * unit, -d.deco.pivot[1] * d.sy * unit);
+      if (d.sx < 0 || d.sy < 0) c.scale(Math.sign(d.sx) || 1, Math.sign(d.sy) || 1);
+      if (img) {
+        const [tx, ty] = d.deco.tile;
+        for (let i = 0; i < tx; i++)
+          for (let j = 0; j < ty; j++) c.drawImage(img, (i - tx / 2) * w, (j - ty / 2) * h, w, h);
+      } else if (d.text) {
+        c.font = `${Math.max(1, h)}px ${FONTS[d.deco.font] ?? FONT}`;
+        c.fillStyle = rgba(d.color, 1);
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        const lines = d.text.split('\n');
+        lines.forEach((line, i) => c.fillText(line, 0, (i - (lines.length - 1) / 2) * h * 1.15));
+      }
+      c.restore();
+    }
+    c.imageSmoothingEnabled = true;
   }
 }
