@@ -7,6 +7,7 @@ import { useChart } from '../chart/model';
 import { LevelImages } from '../render/levelImages';
 import { PostFx, postFxActive } from '../render/postfx';
 import { TrackRenderer } from '../render/trackRenderer';
+import { usePractice } from '../stores/practice';
 import { useSettings } from '../stores/settings';
 import { Button, Segmented } from './ui';
 
@@ -73,6 +74,7 @@ export function TrackView({ leftInset = 0 }: { leftInset?: number }) {
         planetEase: s.trackScreenFx,
         decorations: s.trackDecorations,
         images: img,
+        play: s.mode === 'practice' && s.trackFollowInput ? usePractice.getState().judge : null,
       });
       const filtered = !!state && s.trackFilters && post.supported && postFxActive(state);
       const now = performance.now();

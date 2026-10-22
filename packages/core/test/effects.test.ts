@@ -215,6 +215,16 @@ describe('CameraTimeline', () => {
     expect(instant.at(timing.tiles[2]!.time + 0.01).x).toBe(2);
   });
 
+  it('never jumps in speed when the planet lands', () => {
+    const cam = new CameraTimeline(lv, timing, track, null, { follow: 8, events: false });
+    // a plain exponential lag would jump by follow × step = 8 tiles/s here
+    const speed = (t: number) => (cam.at(t + 5e-5).x - cam.at(t - 5e-5).x) / 1e-4;
+    for (const f of [2, 5, 8]) {
+      const land = timing.tiles[f]!.time;
+      expect(Math.abs(speed(land + 2e-4) - speed(land - 2e-4))).toBeLessThan(0.2);
+    }
+  });
+
   it('moves to a tile, offsets from the last position, and returns to the player', () => {
     const cam = new CameraTimeline(lv, timing, track, null, { follow: Infinity, events: true });
     const t3 = timing.tiles[3]!.time;

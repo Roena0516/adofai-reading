@@ -3,6 +3,7 @@ import {
   BASE_LABEL,
   JUDGE,
   Judge as JudgeImpl,
+  adofaiWindows,
   computeStats,
   describeOrder,
   divisionLabel,
@@ -74,17 +75,27 @@ export function LaneView({ overlay, width }: { overlay: boolean; width: number }
   }, [model]);
 
   // Practice judge: rebuilt when fingering or windows change, reset on every jump.
-  const { mode } = settings;
-  const { timing, fingering, noteAuto, profile, displayTimes } = model;
+  const { mode, judgeStrictness } = settings;
+  const { timing, fingering, noteAuto, displayTimes } = model;
+  // the game's windows: by angle at each note's BPM, never narrower than the timing option allows
+  const windows = useMemo(
+    () =>
+      adofaiWindows(
+        Float64Array.from(timing.notes, (n) => n.bpm),
+        judgeStrictness,
+      ),
+    [timing, judgeStrictness],
+  );
   useEffect(() => {
     if (mode !== 'practice') {
       judgeRef.current = null;
-      usePractice.getState().set({ stats: null, runScores: [] });
+      usePractice.getState().set({ judge: null, stats: null, runScores: [] });
       return;
     }
-    const j = new JudgeImpl(displayTimes, fingering.noteLane, noteAuto, profile.judge);
+    const j = new JudgeImpl(displayTimes, fingering.noteLane, noteAuto, windows);
     j.reset(engine.now());
     judgeRef.current = j;
+    usePractice.getState().set({ judge: j });
     const off = onPlaybackReset((t) => j.reset(t));
     const offEpoch = usePractice.subscribe((s, prev) => {
       if (s.epoch !== prev.epoch) j.reset(engine.now());
@@ -92,8 +103,9 @@ export function LaneView({ overlay, width }: { overlay: boolean; width: number }
     return () => {
       off();
       offEpoch();
+      if (usePractice.getState().judge === j) usePractice.getState().set({ judge: null });
     };
-  }, [mode, timing, fingering, noteAuto, profile.judge, displayTimes]);
+  }, [mode, fingering, noteAuto, windows, displayTimes]);
 
   // Hitsounds follow the fingering: panned by hand, pitched by finger.
   useEffect(() => {
@@ -488,15 +500,15 @@ export function PracticeHud() {
         {(
           [
             ['완벽', stats.perfect, 'text-perfect'],
-            ['근접', stats.near, 'text-near'],
-            ['원거리', stats.far, 'text-far'],
+            ['빠름·느림', stats.near, 'text-near'],
+            ['빠름·느림', stats.far, 'text-far'],
             ['틀림', stats.wrong, 'text-wrong'],
             ['미스', stats.miss, 'text-miss'],
           ] as const
         ).map(([label, n, color]) => (
-          <div key={label}>
+          <div key={color}>
             <div className={`text-[13px] font-medium ${color}`}>{n}</div>
-            <div className="text-dim">{label}</div>
+            <div className="text-[10px] tracking-tight whitespace-nowrap text-dim">{label}</div>
           </div>
         ))}
       </div>

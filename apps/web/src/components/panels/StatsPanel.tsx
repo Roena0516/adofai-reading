@@ -61,12 +61,12 @@ export function StatsPanel() {
         <div className="grid grid-cols-5 gap-1 text-center text-xs tabular">
           {[
             ['완벽', stats.perfect, 'text-perfect'],
-            ['근접', stats.near, 'text-near'],
-            ['원거리', stats.far, 'text-far'],
+            ['빠름·느림', stats.near, 'text-near'],
+            ['빠름·느림', stats.far, 'text-far'],
             ['틀림', stats.wrong, 'text-wrong'],
             ['미스', stats.miss, 'text-miss'],
           ].map(([label, n, color]) => (
-            <div key={label as string} className="rounded-md bg-surface-2 py-1.5">
+            <div key={color as string} className="rounded-md bg-surface-2 py-1.5">
               <div className={`text-base font-medium ${color}`}>{n as number}</div>
               <div className="text-dim">{label as string}</div>
             </div>

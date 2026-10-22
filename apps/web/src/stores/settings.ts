@@ -1,3 +1,4 @@
+import type { JudgeStrictness } from '@adofai-reading/core';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -30,6 +31,8 @@ export interface Settings {
   inputOffsetMs: number;
   /** Seconds of run-up before a seek target in practice. */
   leadIn: number;
+  /** The game's timing option for practice judgments. */
+  judgeStrictness: JudgeStrictness;
   sidebarTab: 'profile' | 'sections' | 'stats' | 'settings';
   sidebarOpen: boolean;
   /** Show the in-game style track next to the lanes. */
@@ -47,6 +50,8 @@ export interface Settings {
   trackFilters: boolean;
   /** Decoration images and text (off by default: they can hide the tiles). */
   trackDecorations: boolean;
+  /** In practice, the planets land when you press, not when the chart says. */
+  trackFollowInput: boolean;
   /** How quickly the camera catches up with the planet (1/s). */
   cameraFollow: number;
   /** Draw pseudo chords at their real (slightly staggered) times or all at the first note's time. */
@@ -73,6 +78,7 @@ export const DEFAULT_SETTINGS: Settings = {
   visualOffsetMs: 0,
   inputOffsetMs: 0,
   leadIn: 2,
+  judgeStrictness: 'normal',
   sidebarTab: 'profile',
   sidebarOpen: true,
   showTrack: true,
@@ -83,6 +89,7 @@ export const DEFAULT_SETTINGS: Settings = {
   trackScreenFx: true,
   trackFilters: true,
   trackDecorations: false,
+  trackFollowInput: true,
   cameraFollow: 5,
   chordDisplay: 'actual',
 };

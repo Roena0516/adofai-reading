@@ -1,10 +1,21 @@
-import type { CameraTimeline, DecorationState, RGBA, TileState, VfxState } from '@adofai-reading/core';
+import type {
+  CameraTimeline,
+  DecorationState,
+  Judge,
+  JudgeCode,
+  RGBA,
+  TileState,
+  VfxState,
+} from '@adofai-reading/core';
 import {
   DECORATION_PX_PER_TILE,
+  JUDGE,
   floorAt,
+  judgeLabel,
   laneLabel,
   lookColor,
   planetsAt,
+  planetsOn,
   tileAppearance,
   tileLook,
   tileStateAt,
@@ -47,7 +58,30 @@ export interface TrackDrawOptions {
   planetEase?: boolean;
   decorations?: boolean;
   images?: LevelImages | null;
+  /** Practice: the planets land when this judge records a hit (or miss), like playing the game. */
+  play?: Judge | null;
 }
+
+/** Judgment text colours in the game: Perfect green, E/L Perfect yellow, Early/Late and misses red. */
+const PLAY_COLOR: Partial<Record<JudgeCode, string>> = {
+  [JUDGE.perfect]: '#60ff4e',
+  [JUDGE.near]: '#fcff4e',
+  [JUDGE.far]: '#ff5a4a',
+  [JUDGE.miss]: '#ff4a4a',
+  [JUDGE.wrong]: '#f2a2b8',
+  [JUDGE.tooEarly]: '#ff5a4a',
+};
+/** A tile drawn this frame, kept for the overlays (badges, judgments) that go on top. */
+interface Drawn {
+  f: number;
+  x: number;
+  y: number;
+  s: number;
+  alpha: number;
+}
+
+/** How long a judgment stays over its tile (song seconds). */
+const PLAY_TEXT_S = 0.6;
 
 const FONTS: Record<string, string> = {
   Default: FONT,
@@ -302,7 +336,17 @@ export class TrackRenderer {
       Math.cos(a) * cr - Math.sin(a) * sr,
       -(Math.cos(a) * sr + Math.sin(a) * cr),
     ];
-    const k = floorAt(timing, time);
+    // Practice: the planet stands on the last floor you have played (hit or missed) and waits for the
+    // next press, however early or late it comes.
+    const judge = opts.play ?? null;
+    let k = floorAt(timing, time);
+    let open = -1;
+    if (judge) {
+      open = judge.pending();
+      const landed = open > 0 ? timing.notes[open - 1]!.floor : 0;
+      const next = open < timing.notes.length ? timing.notes[open]!.floor : Infinity;
+      k = Math.max(landed, Math.min(k, next - 1));
+    }
     const deg = Math.PI / 180;
 
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -327,7 +371,10 @@ export class TrackRenderer {
     }
 
     // planets first (decorations can follow them), drawn after the tiles
-    const pl = planetsAt(timing, track, time, opts.planetEase ? model.vfx.planetProgress : undefined);
+    const planetEase = opts.planetEase ? model.vfx.planetProgress : undefined;
+    const pl = judge
+      ? planetsOn(timing, track, k, time, planetEase)
+      : planetsAt(timing, track, time, planetEase);
     let pivotX = pl.pivotX;
     let pivotY = pl.pivotY;
     if (opts.effects) {
@@ -364,7 +411,7 @@ export class TrackRenderer {
       });
     }
 
-    const nextNoteIdx = upperBound(timing.noteTimes, time + 1e-4);
+    const nextNoteIdx = judge ? open : upperBound(timing.noteTimes, time + 1e-4);
     const lastLabelled = nextNoteIdx + 64;
     const margin = px * 1.2;
     const from = Math.max(0, k - 400);
@@ -372,13 +419,6 @@ export class TrackRenderer {
     c.lineJoin = 'miter';
     c.miterLimit = MITER_LIMIT;
 
-    interface Drawn {
-      f: number;
-      x: number;
-      y: number;
-      s: number;
-      alpha: number;
-    }
     const drawn: Drawn[] = [];
 
     // Later tiles first, so earlier ones (the ones the planet reaches first) sit on top, as in the game.
@@ -561,6 +601,52 @@ export class TrackRenderer {
         b.textAlign = 'center';
       }
     }
+    b.globalAlpha = 1;
+
+    if (judge) this.drawJudgments(b, judge, model, drawn, time, px, sx(otherX, otherY), sy(otherX, otherY));
+  }
+
+  /** Judgment text floating up from the tiles just played, and "too early" over the moving planet. */
+  private drawJudgments(
+    b: CanvasRenderingContext2D,
+    judge: Judge,
+    model: ChartModel,
+    drawn: Drawn[],
+    time: number,
+    px: number,
+    planetX: number,
+    planetY: number,
+  ): void {
+    const notes = model.timing.notes;
+    const at = new Map<number, Drawn>();
+    for (const d of drawn) at.set(d.f, d);
+    const size = Math.max(12, Math.min(26, 0.3 * px));
+    b.font = `800 ${Math.round(size)}px ${FONT}`;
+    b.textAlign = 'center';
+    b.textBaseline = 'middle';
+    b.lineJoin = 'round';
+    const text = (label: string, color: string, x: number, y: number, age: number) => {
+      b.globalAlpha = Math.max(0, 1 - age / PLAY_TEXT_S);
+      const lift = (age / PLAY_TEXT_S) * 0.35 * px + 0.42 * px;
+      b.lineWidth = Math.max(2, size * 0.18);
+      b.strokeStyle = 'rgba(8,8,10,0.85)';
+      b.strokeText(label, x, y - lift);
+      b.fillStyle = color;
+      b.fillText(label, x, y - lift);
+    };
+    const open = judge.pending();
+    for (let i = Math.max(0, open - 24); i < Math.min(notes.length, open + 8); i++) {
+      const age = time - judge.judgedAt[i]!;
+      if (!(age >= 0 && age < PLAY_TEXT_S)) continue;
+      const code = judge.result[i] as JudgeCode;
+      const color = PLAY_COLOR[code];
+      const tile = at.get(notes[i]!.floor);
+      if (!color || !tile) continue;
+      text(judgeLabel(code, judge.offsetMs[i]!), color, tile.x, tile.y, age);
+    }
+    const early = time - judge.tooEarly.at;
+    if (early >= 0 && early < PLAY_TEXT_S)
+      text(judgeLabel(JUDGE.tooEarly, 0), PLAY_COLOR[JUDGE.tooEarly]!, planetX, planetY, early);
     b.globalAlpha = 1;
   }
 

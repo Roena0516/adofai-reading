@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeTiming, computeTrack, planetsAt } from '../src';
+import { computeTiming, computeTrack, planetsAt, planetsOn } from '../src';
 import { makeLevel } from './helpers';
 
 const pts = (path: string) => {
@@ -38,5 +38,20 @@ describe('planetsAt', () => {
     const mid = planetsAt(timing, track, timing.tiles[1]!.time + timing.tiles[1]!.duration / 2);
     expect(mid.angle).toBeCloseTo(90, 6);
     expect(planetsAt(timing, track, timing.tiles[2]!.time).pivotPlanet).not.toBe(at1.pivotPlanet);
+  });
+});
+
+describe('planetsOn', () => {
+  it('starts a little behind after an early hit and swings past the next tile while waiting', () => {
+    const level = makeLevel('RRUR');
+    const timing = computeTiming(level);
+    const track = computeTrack(level.angles);
+    const t1 = timing.tiles[1]!;
+    // a straight tile turns 180° per beat, clockwise from 180°
+    const early = planetsOn(timing, track, 1, t1.time - t1.duration / 18);
+    expect(early.floor).toBe(1);
+    expect(early.angle).toBeCloseTo(190, 6);
+    const waiting = planetsOn(timing, track, 1, t1.time + (t1.duration * 4) / 3);
+    expect(waiting.angle).toBeCloseTo(-60, 6);
   });
 });

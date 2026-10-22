@@ -47,8 +47,9 @@ export function divisionColor(div: number | null): string {
 
 export const JUDGE_COLOR: Record<number, string> = {
   1: '#8ec5ff',
-  2: '#9be3b6',
-  3: '#f2c97a',
+  2: '#f5e35a',
+  3: '#ff6a4e',
   4: '#ff7a7a',
   5: '#f2a2b8',
+  8: '#ff6a4e',
 };

@@ -133,6 +133,36 @@ export function planetsAt(
   return { floor: k, pivotX: track.x[k]!, pivotY: track.y[k]!, angle, pivotPlanet: (k % 2) as 0 | 1 };
 }
 
+/**
+ * Where the planets are when the player decides when the planet lands: it stands on `floor` and the
+ * other planet turns from there at that floor's speed, measured from the song time like the game. An
+ * early hit starts it a little behind its start; while the next press has not come it swings on past
+ * the next tile.
+ */
+export function planetsOn(
+  timing: Pick<Timing, 'tiles'>,
+  track: Track,
+  floor: number,
+  t: number,
+  ease?: (floor: number, u: number) => number,
+): PlanetState {
+  const tile = timing.tiles[floor]!;
+  let progress = 0;
+  if (tile.duration > 0) {
+    const total = tile.rotation + tile.pauseBeats * 180 + tile.holdTurns * 360;
+    const u = (t - tile.time) / tile.duration;
+    progress = (ease && u >= 0 && u <= 1 ? ease(floor, u) : u) * total;
+  }
+  const angle = tile.entry + (tile.clockwise ? -progress : progress);
+  return {
+    floor,
+    pivotX: track.x[floor]!,
+    pivotY: track.y[floor]!,
+    angle,
+    pivotPlanet: (floor % 2) as 0 | 1,
+  };
+}
+
 const timesCache = new WeakMap<object, Float64Array>();
 export function tileTimes(timing: Pick<Timing, 'tiles'>): Float64Array {
   let cached = timesCache.get(timing.tiles);

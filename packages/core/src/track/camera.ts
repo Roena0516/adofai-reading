@@ -20,7 +20,10 @@ export interface CameraView {
 }
 
 export interface CameraOptions {
-  /** How fast the camera catches up with the planet (1/s). Infinity = no lag. */
+  /**
+   * How fast the camera catches up with the planet (1/s): in a steady stream it trails by 1/follow
+   * seconds. Infinity = no lag.
+   */
   follow: number;
   /** Apply MoveCamera events; when false the camera just follows the planet. */
   events: boolean;
@@ -177,18 +180,25 @@ export class CameraTimeline {
     this.zoomT = Float64Array.from(this.zoom, (k) => k.t);
   }
 
-  /** The pivot planet as the camera sees it: eases towards each new tile instead of jumping. */
+  /**
+   * The pivot planet as the camera sees it. Each jump to a new tile is followed like a critically damped
+   * spring: the camera starts gently, speeds up and settles without overshooting, so its speed never
+   * jumps when a tile is hit (a plain exponential lag starts every jump at full speed and feels stiff
+   * when fast). ω = 2 × follow keeps the lag in a steady stream at 1/follow seconds.
+   */
   playerAt(t: number): [number, number] {
     const k = Math.max(0, upperBound(this.landT, t) - 1);
     let x = this.landX[k]!;
     let y = this.landY[k]!;
     const follow = this.opts.follow;
     if (!Number.isFinite(follow)) return [x, y];
-    const window = 7 / follow;
+    const omega = 2 * follow;
+    const window = 12 / omega;
     for (let j = k; j >= 1 && t - this.landT[j]! < window; j--) {
-      const w = Math.exp(-follow * (t - this.landT[j]!));
-      x -= (this.landX[j]! - this.landX[j - 1]!) * w;
-      y -= (this.landY[j]! - this.landY[j - 1]!) * w;
+      const u = omega * (t - this.landT[j]!);
+      const left = (1 + u) * Math.exp(-u);
+      x -= (this.landX[j]! - this.landX[j - 1]!) * left;
+      y -= (this.landY[j]! - this.landY[j - 1]!) * left;
     }
     return [x, y];
   }

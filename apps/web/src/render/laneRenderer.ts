@@ -1,10 +1,10 @@
-import type { Judge } from '@adofai-reading/core';
+import type { Judge, JudgeCode } from '@adofai-reading/core';
 import {
   FINGER_SHORT,
   JUDGE,
-  JUDGE_LABEL,
   divisionLabel,
   formatOrder,
+  judgeLabel,
   keyLabel,
   laneLabel,
   lowerBound,
@@ -471,11 +471,11 @@ export class LaneRenderer {
       c.textAlign = 'center';
       c.font = `800 22px ${FONT}`;
       c.fillStyle = JUDGE_COLOR[hit.code] ?? '#fff';
-      const label = JUDGE_LABEL[hit.code as keyof typeof JUDGE_LABEL];
+      const label = judgeLabel(hit.code as JudgeCode, hit.offsetMs);
       const cx = (g.left + g.right) / 2;
       const cy = down ? g.judgeY - 70 : g.judgeY + 70;
       c.fillText(label, cx, cy);
-      if (hit.code !== JUDGE.miss) {
+      if (hit.code !== JUDGE.miss && hit.code !== JUDGE.tooEarly) {
         c.font = `600 12px ${FONT}`;
         c.fillText(formatMs(hit.offsetMs), cx, cy + 20);
       }

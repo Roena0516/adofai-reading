@@ -72,9 +72,6 @@ export interface FingeringProfile {
     streamDoubleMinBeat: number;
   };
   judge: {
-    perfectMs: number;
-    nearMs: number;
-    farMs: number;
     /** Whether pressing the wrong finger in time counts as a miss for accuracy. */
     wrongFingerIsMiss: boolean;
   };
@@ -118,10 +115,8 @@ export const DEFAULT_CHORD: FingeringProfile['chord'] = {
   streamDouble: true,
   streamDoubleMinBeat: 16,
 };
+/** Timing windows follow the game (practice/judge.ts); the profile only keeps what counts as a miss. */
 export const DEFAULT_JUDGE: FingeringProfile['judge'] = {
-  perfectMs: 25,
-  nearMs: 50,
-  farMs: 90,
   wrongFingerIsMiss: false,
 };
 
@@ -238,9 +233,6 @@ export function normalizeProfile(input: unknown): FingeringProfile {
       streamDoubleMinBeat: Math.max(0, numOr(chord.streamDoubleMinBeat, DEFAULT_CHORD.streamDoubleMinBeat)),
     },
     judge: {
-      perfectMs: Math.max(1, numOr(judge.perfectMs, DEFAULT_JUDGE.perfectMs)),
-      nearMs: Math.max(1, numOr(judge.nearMs, DEFAULT_JUDGE.nearMs)),
-      farMs: Math.max(1, numOr(judge.farMs, DEFAULT_JUDGE.farMs)),
       wrongFingerIsMiss: typeof judge.wrongFingerIsMiss === 'boolean' ? judge.wrongFingerIsMiss : false,
     },
   };

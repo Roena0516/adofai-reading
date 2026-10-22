@@ -150,7 +150,15 @@ export function SettingsPanel() {
               checked={s.trackDecorations}
               onChange={(trackDecorations) => s.set({ trackDecorations })}
             />
-            <Field label="카메라 따라가기" hint="값이 작을수록 카메라가 행성을 천천히 따라갑니다.">
+            <Toggle
+              label="연습할 때 내 입력대로 행성 움직이기"
+              checked={s.trackFollowInput}
+              onChange={(trackFollowInput) => s.set({ trackFollowInput })}
+            />
+            <Field
+              label="카메라 따라가기"
+              hint="클수록 행성에 바짝 붙어 따라갑니다. 어느 값이든 출발과 멈춤은 부드럽습니다."
+            >
               <Slider
                 value={s.cameraFollow}
                 min={1}
@@ -277,6 +285,24 @@ export function SettingsPanel() {
             step={0.5}
             className="w-20"
             onChange={(v) => v != null && s.set({ leadIn: v })}
+          />
+        </Field>
+      </Section>
+
+      <Section title="판정">
+        <Field
+          label="판정 기준"
+          hint="얼불춤의 타이밍 옵션과 같습니다. 행성 각도로 ±30° 완벽, ±45°까지 빠름·느림(노란색), ±60°까지 빠름·느림(빨간색)이고, 빠른 곡에서는 옵션별 최소 범위(보통 ±65ms)보다 좁아지지 않습니다."
+        >
+          <Segmented
+            size="sm"
+            value={s.judgeStrictness}
+            onChange={(judgeStrictness) => s.set({ judgeStrictness })}
+            options={[
+              { value: 'lenient', label: '느슨' },
+              { value: 'normal', label: '보통' },
+              { value: 'strict', label: '엄격' },
+            ]}
           />
         </Field>
       </Section>

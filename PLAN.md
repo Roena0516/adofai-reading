@@ -34,6 +34,8 @@
   - 장식: AddDecoration, AddText, MoveDecorations, SetText. 기본 꺼짐.
   - 손가락 배지는 필터 위 오버레이에 그린다. 레벨 zip의 이미지도 읽는다.
   - 빠진 것: SetConditionalEvents, SetFilterAdvanced, 배경 영상, 장식 마스킹·히트박스.
+- **얼불춤 판정**: 고정 ms 창 대신 게임과 같은 각도 판정(±30°·45°·60°, BPM별)과 타이밍 옵션(느슨·보통·엄격)
+  최소 범위, 너무 빠름 표시.
 - 남은 것(M7): Hold 규칙 실레벨 검증, MultiPlanet·FreeRoam, Safari용 ogg 디코더.
 
 ## 1. 결정 사항
