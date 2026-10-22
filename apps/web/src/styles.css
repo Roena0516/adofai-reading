@@ -1,0 +1,104 @@
+@import 'tailwindcss';
+
+/* Design tokens from team-carol/carol-web (app/globals.css), plus app-specific ones below. */
+@theme {
+  --color-canvas: #1a1a1c;
+  --color-canvas-alt: #211f24;
+  --color-surface: #242427;
+  --color-surface-2: #2e2e33;
+  --color-surface-3: #332e36;
+  --color-border-soft: #33333a;
+  --color-border-2: #3a353d;
+
+  --color-ink: #f2edef;
+  --color-ink-2: #e8dfe3;
+  --color-ink-soft: #cfc6ca;
+  --color-muted: #b3a8ad;
+  --color-dim: #8a8087;
+  --color-faint: #6f676c;
+
+  --color-accent: #ff9294;
+  --color-accent-hover: #f2787b;
+  --color-accent-ink: #3a1e1e;
+  --color-accent-soft: #f2b3bf;
+
+  /* app: hands and judgements, tuned to sit on the carol palette */
+  --color-hand-l: #8ec5ff;
+  --color-hand-r: #ff9294;
+  --color-perfect: #8ec5ff;
+  --color-near: #9be3b6;
+  --color-far: #f2c97a;
+  --color-wrong: #f2a2b8;
+  --color-miss: #ff7a7a;
+  --color-warn: #f2c97a;
+
+  --font-sans:
+    'Pretendard', 'Pretendard Variable', 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, Menlo, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #3898ec;
+  outline-offset: 2px;
+}
+
+input[type='range'] {
+  accent-color: var(--color-accent);
+}
+
+input[type='number']::-webkit-inner-spin-button {
+  opacity: 0.35;
+}
+
+@layer components {
+  /* Inputs and selects: surface-2 with a 1px ring, like carol's secondary controls. */
+  .field {
+    height: 2rem;
+    border-radius: 0.5rem;
+    background: var(--color-surface-2);
+    padding-inline: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--color-ink);
+    box-shadow: 0 0 0 1px var(--color-border-2);
+    outline: none;
+    transition: box-shadow 0.15s;
+  }
+  .field:focus {
+    box-shadow: 0 0 0 1px var(--color-accent);
+  }
+  .field-invalid {
+    box-shadow: 0 0 0 1px var(--color-wrong);
+  }
+  .card {
+    border-radius: 1rem;
+    border: 1px solid var(--color-border-soft);
+    background: var(--color-surface);
+  }
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-2) transparent;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
