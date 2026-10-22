@@ -1,5 +1,5 @@
 import type { ChartModel } from '../chart/model';
-import { bandColor } from './colors';
+import { runColor } from './colors';
 
 const MIN_BPM = 60;
 const MAX_BPM = 4000;
@@ -40,7 +40,8 @@ export class TimelineRenderer {
     c.fillStyle = '#211f24';
     c.fillRect(0, 0, this.w, this.h);
     const toX = (t: number) => (t / duration) * this.w;
-    const usable = this.h - 12;
+    // a little headroom above the tallest bar, scaled to the strip's height
+    const usable = this.h - Math.round(this.h * 0.15);
     const scale = (bpm: number) =>
       Math.max(0.06, Math.min(1, Math.log(Math.max(bpm, MIN_BPM) / MIN_BPM) / Math.log(MAX_BPM / MIN_BPM)));
     const { runs } = model.analysis;
@@ -49,7 +50,7 @@ export class TimelineRenderer {
       const x1 = toX(run.startTime);
       const x2 = Math.max(x1 + 1, toX(run.endTime));
       const hh = scale(run.effBpm) * usable;
-      c.fillStyle = bandColor(model.fingering.runBand[r]!);
+      c.fillStyle = runColor(model.fingering, r);
       c.globalAlpha = run.eventCount >= 3 ? 0.9 : 0.45;
       c.fillRect(x1, this.h - hh, x2 - x1, hh);
     });

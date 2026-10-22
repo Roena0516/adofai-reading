@@ -1,9 +1,8 @@
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { BASE_LABEL } from '@adofai-reading/core';
 import { useLevel } from '../stores/level';
-import { useProfiles } from '../stores/profiles';
-import { useSettings } from '../stores/settings';
+import { useActiveProfile, useProfiles } from '../stores/profiles';
 import { OpenButton } from './OpenButton';
-import { Button } from './ui';
+import { Segmented } from './ui';
 
 export function Logo() {
   return (
@@ -16,26 +15,11 @@ export function Logo() {
 
 export function Header() {
   const loaded = useLevel((s) => s.loaded);
-  const profiles = useProfiles((s) => s.profiles);
-  const activeId = useProfiles((s) => s.activeId);
-  const setActive = useProfiles((s) => s.setActive);
+  const profile = useActiveProfile();
+  const update = useProfiles((s) => s.update);
   const st = loaded?.level.settings;
-  const sidebarOpen = useSettings((s) => s.sidebarOpen);
-  const setSettings = useSettings((s) => s.set);
   return (
     <header className="relative z-10 flex h-14 shrink-0 items-center gap-4 border-b border-border-soft bg-canvas/90 px-4 backdrop-blur-md">
-      {loaded && (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="-ml-1 w-8 px-0"
-          aria-label={sidebarOpen ? '사이드바 숨기기' : '사이드바 보이기'}
-          title={sidebarOpen ? '사이드바 숨기기' : '사이드바 보이기'}
-          onClick={() => setSettings({ sidebarOpen: !sidebarOpen })}
-        >
-          {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-        </Button>
-      )}
       <div className="flex items-center gap-2">
         <Logo />
         <span className="text-[17px] font-medium text-ink">ADOFAI 타법 리더</span>
@@ -48,16 +32,18 @@ export function Header() {
         </div>
       )}
       <div className="ml-auto flex items-center gap-2">
-        <label className="flex items-center gap-2 text-xs text-muted">
-          타법
-          <select value={activeId} onChange={(e) => setActive(e.target.value)} className="field max-w-48">
-            {profiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Segmented
+          size="sm"
+          value={profile.simple.base}
+          onChange={(base) =>
+            update(profile.id, (p) => ({ ...p, mode: 'simple', simple: { ...p.simple, base } }))
+          }
+          options={([2, 4] as const).map((b) => ({
+            value: b,
+            label: BASE_LABEL[b],
+            title: '레벨 전체의 기본 손배치. 구간별로는 일시정지 후 레인 옆 카드에서 바꿉니다.',
+          }))}
+        />
         <OpenButton />
       </div>
     </header>

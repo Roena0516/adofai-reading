@@ -1,4 +1,4 @@
-import type { Finger, Hand, Lane } from '@adofai-reading/core';
+import type { Finger, FingeringResult, Hand, Lane } from '@adofai-reading/core';
 
 // Right hand = carol accent coral (#ff9294), left hand = a matching sky blue (#8ec5ff).
 const HUE: Record<Hand, number> = { L: 210, R: 358 };
@@ -14,6 +14,18 @@ export const HAND_COLOR: Record<Hand, string> = { L: '#8ec5ff', R: '#ff9294' };
 const BAND = ['#8a8087', '#8ec5ff', '#c6a8ff', '#ff9294', '#f2c97a', '#9be3b6', '#f2b3bf', '#7fd1d8'];
 export function bandColor(i: number): string {
   return i < 0 ? '#6f676c' : BAND[i % BAND.length]!;
+}
+
+/** Palette slot per key count, so 2키 and 4키 bases colour the same key count alike. */
+const KEY_SLOT: Record<number, number> = { 1: 0, 2: 1, 4: 2, 6: 3, 8: 4, 3: 5 };
+
+/** Colour of a run: by its key count in the simple layout, by band for hand-edited orders. */
+export function runColor(
+  fingering: Pick<FingeringResult, 'runBase' | 'runBand' | 'runSeq'>,
+  r: number,
+): string {
+  if (fingering.runBase[r]) return bandColor(KEY_SLOT[fingering.runSeq[r]?.length ?? 0] ?? -1);
+  return bandColor(fingering.runBand[r] ?? -1);
 }
 
 const DIVISION: Record<string, string> = {

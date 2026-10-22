@@ -47,7 +47,7 @@ export function TimelineStrip() {
   return (
     <div
       ref={wrapRef}
-      className="relative h-14 shrink-0 cursor-crosshair border-b border-border-soft"
+      className="relative h-8 shrink-0 cursor-crosshair border-b border-border-soft"
       title="클릭: 이동 · Shift+드래그: 반복 구간 지정"
     >
       <canvas

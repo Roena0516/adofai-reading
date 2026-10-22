@@ -5,3 +5,4 @@ dist
 *.zip
 coverage
 .vite
+.vercel

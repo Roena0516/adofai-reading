@@ -8,7 +8,9 @@ export type SpeedUnit = 'bpm' | 'beat';
 export type ChordAssign = 'cycle' | 'otherHand' | 'sameHand';
 /** How the fingers of each hand roll in the simple layout. 안밖: 검지→바깥, 밖안: 바깥→검지, 계단: 3412형. */
 export type RollStyle = 'inout' | 'outin' | 'stairs';
-export type KeyCount = 1 | 2 | 4 | 6 | 8;
+export type KeyCount = 1 | 2 | 3 | 4 | 6 | 8;
+/** Which key counts the simple layout uses: built around a two-hand trill (2) or four fingers (4). */
+export type KeyBase = 2 | 4;
 
 /** A speed range and the cyclic finger order used inside it. */
 export interface Band {
@@ -29,12 +31,13 @@ export interface Tier {
 export interface FingeringProfile {
   id: string;
   name: string;
-  version: 4;
-  /** 'simple': orders come from `simple` (비트별 키 수). 'custom': the hand-edited `bands`. */
+  version: 5;
+  /** 'simple': orders come from `simple` (기반별 키 수). 'custom': the hand-edited `bands`. */
   mode: 'simple' | 'custom';
   simple: {
     style: RollStyle;
-    tiers: Tier[];
+    /** Key counts per 비트 come from `BASE_TIERS[base]`. */
+    base: KeyBase;
   };
   fingers: HandFingers;
   mainHand: Hand;
@@ -77,13 +80,27 @@ export interface FingeringProfile {
   };
 }
 
-export const DEFAULT_TIERS: Tier[] = [
-  { upTo: 4, keys: 1 },
-  { upTo: 8, keys: 2 },
-  { upTo: 16, keys: 4 },
-  { upTo: 24, keys: 6 },
-  { upTo: null, keys: 8 },
-];
+/**
+ * Keys per stream density.
+ * 2키 기반: 8비트 one finger, 12·16비트 two-hand trill, 24비트 3키, 32비트 4키.
+ * 4키 기반: 8비트 trill, 12비트 3키 (every beat starts on the same finger), 16비트 4키, 24비트 6키, 32비트 8키.
+ */
+export const BASE_TIERS: Record<KeyBase, Tier[]> = {
+  2: [
+    { upTo: 8, keys: 1 },
+    { upTo: 16, keys: 2 },
+    { upTo: 24, keys: 3 },
+    { upTo: null, keys: 4 },
+  ],
+  4: [
+    { upTo: 4, keys: 1 },
+    { upTo: 8, keys: 2 },
+    { upTo: 12, keys: 3 },
+    { upTo: 16, keys: 4 },
+    { upTo: 24, keys: 6 },
+    { upTo: null, keys: 8 },
+  ],
+};
 
 export const DEFAULT_RUN: FingeringProfile['run'] = {
   reanchor: 'rest',
@@ -112,7 +129,6 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 const numOr = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const oneOf = <T extends string>(v: unknown, opts: readonly T[], d: T): T =>
   opts.includes(v as T) ? (v as T) : d;
-const KEY_COUNTS: KeyCount[] = [1, 2, 4, 6, 8];
 
 function fingerList(v: unknown): Finger[] {
   return Array.isArray(v) ? (v.filter((f) => ALL_FINGERS.includes(f as Finger)) as Finger[]) : [];
@@ -128,16 +144,15 @@ export function newProfileId(): string {
   return `p${Date.now().toString(36)}${idCounter.toString(36)}`;
 }
 
-function normalizeTiers(v: unknown): Tier[] {
-  if (!Array.isArray(v)) return DEFAULT_TIERS.map((t) => ({ ...t }));
-  const tiers = v.filter(isObj).map((t) => ({
-    upTo: typeof t.upTo === 'number' && Number.isFinite(t.upTo) ? t.upTo : null,
-    keys: KEY_COUNTS.includes(t.keys as KeyCount) ? (t.keys as KeyCount) : 4,
-  }));
-  if (!tiers.length) return DEFAULT_TIERS.map((t) => ({ ...t }));
-  tiers.sort((a, b) => (a.upTo ?? Infinity) - (b.upTo ?? Infinity));
-  tiers[tiers.length - 1]!.upTo = null;
-  return tiers;
+/** The base an older profile's per-비트 key counts were closest to: a 2-key trill at 16비트 means 2키 기반. */
+function baseFromTiers(v: unknown): KeyBase {
+  if (!Array.isArray(v)) return 4;
+  const tiers = v
+    .filter(isObj)
+    .map((t) => ({ upTo: typeof t.upTo === 'number' ? t.upTo : Infinity, keys: t.keys }))
+    .sort((a, b) => a.upTo - b.upTo);
+  const at16 = tiers.find((t) => t.upTo >= 16);
+  return at16?.keys === 2 ? 2 : 4;
 }
 
 /**
@@ -185,11 +200,13 @@ export function normalizeProfile(input: unknown): FingeringProfile {
   return {
     id: typeof o.id === 'string' && o.id ? o.id : newProfileId(),
     name: typeof o.name === 'string' && o.name.trim() ? o.name : '내 타법',
-    version: 4,
-    mode: isV2 ? oneOf(o.mode, ['simple', 'custom'] as const, 'simple') : 'simple',
+    version: 5,
+    // v5: the hand-edited orders are no longer offered in the app, so older profiles use the layout
+    mode: version >= 5 ? oneOf(o.mode, ['simple', 'custom'] as const, 'simple') : 'simple',
     simple: {
       style: oneOf(simple.style, ['inout', 'outin', 'stairs'] as const, 'inout'),
-      tiers: normalizeTiers(simple.tiers),
+      // v5: per-비트 key counts became a 2키/4키 base
+      base: simple.base === 2 || simple.base === 4 ? simple.base : baseFromTiers(simple.tiers),
     },
     fingers: { L: [...FULL_FINGERS.L], R: [...FULL_FINGERS.R] },
     mainHand: oneOf(o.mainHand, ['L', 'R'] as const, 'R'),

@@ -1,0 +1,7 @@
+# Test levels (they contain the songs) and local build output never go to Vercel.
+*.zip
+node_modules
+**/node_modules
+**/dist
+.DS_Store
+.vercel

@@ -1,10 +1,11 @@
 /**
  * Print what the engine sees in a level, for checking against the game.
- *   pnpm dump "<path to .adofai or .zip>" [--preset basic|outin|stairs|max4|trill] [--notes 40]
+ *   pnpm dump "<path to .adofai or .zip>" [--base 2|4] [--style inout|outin|stairs] [--notes 40]
  */
 import { readFileSync } from 'node:fs';
+import type { KeyBase, RollStyle } from '../index';
 import {
-  PROFILE_PRESETS,
+  BASE_LABEL,
   analyzeRhythm,
   assignFingering,
   computeTiming,
@@ -14,8 +15,9 @@ import {
   divisionLabel,
   laneLabel,
   matchAudio,
+  defaultProfile,
+  effectiveBands,
   parseLevel,
-  profileFromPreset,
   readZip,
 } from '../index';
 
@@ -26,7 +28,9 @@ const opt = (name: string) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 if (!file) {
-  console.error('usage: dump <level.adofai | level.zip> [--preset key] [--notes N]');
+  console.error(
+    'usage: dump <level.adofai | level.zip> [--base 2|4] [--style inout|outin|stairs] [--notes N]',
+  );
   process.exit(1);
 }
 
@@ -50,8 +54,11 @@ async function main() {
   const timing = computeTiming(level);
   const sections = detectSections(timing);
   const analysis = analyzeRhythm(timing, sections);
-  const preset = PROFILE_PRESETS.find((p) => p.key === (opt('preset') ?? 'basic')) ?? PROFILE_PRESETS[0]!;
-  const profile = profileFromPreset(preset);
+  const base: KeyBase = opt('base') === '2' ? 2 : 4;
+  const style = (
+    ['inout', 'outin', 'stairs'].includes(opt('style') ?? '') ? opt('style') : 'inout'
+  ) as RollStyle;
+  const profile = defaultProfile(base, style);
   const fingering = assignFingering(
     analysis,
     timing.notes.map((n) => n.floor),
@@ -80,11 +87,9 @@ async function main() {
   analysis.runs.forEach((r, i) =>
     bandUse.set(fingering.runBand[i]!, (bandUse.get(fingering.runBand[i]!) ?? 0) + r.noteCount),
   );
-  console.log(`\nprofile "${profile.name}" lanes ${fingering.lanes.map(laneLabel).join(' ')}`);
-  profile.bands.forEach((b, i) =>
-    console.log(
-      `  band ${i + 1}: ≤ ${b.upTo ?? '∞'} ${profile.speedUnit}  ${b.order.padEnd(9)} notes ${bandUse.get(i) ?? 0}`,
-    ),
+  console.log(`\n${BASE_LABEL[base]} (${style}) lanes ${fingering.lanes.map(laneLabel).join(' ')}`);
+  effectiveBands(profile).bands.forEach((b, i) =>
+    console.log(`  band ${i + 1}: ≤ ${b.upTo ?? '∞'}비트  ${b.order.padEnd(9)} notes ${bandUse.get(i) ?? 0}`),
   );
   for (const e of fingering.errors) console.log(`! ${e}`);
 

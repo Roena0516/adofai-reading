@@ -13,7 +13,7 @@ import {
 import type { ChartModel } from '../chart/model';
 import { formatMs } from '../lib/format';
 import type { Settings } from '../stores/settings';
-import { bandColor, divisionColor, JUDGE_COLOR, laneColor } from './colors';
+import { divisionColor, JUDGE_COLOR, laneColor, runColor } from './colors';
 
 export type LaneSettings = Pick<
   Settings,
@@ -441,7 +441,7 @@ export class LaneRenderer {
         if (run.eventCount < 3) continue;
         const y1 = yOf(run.startTime);
         const y2 = yOf(run.endTime);
-        const color = bandColor(fingering.runBand[r]!);
+        const color = runColor(fingering, r);
         const bx = g.right + 12;
         c.fillStyle = color;
         c.fillRect(bx, Math.min(y1, y2), 2, Math.max(2, Math.abs(y2 - y1)));

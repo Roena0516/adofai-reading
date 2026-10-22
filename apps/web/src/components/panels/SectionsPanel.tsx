@@ -1,5 +1,12 @@
 import type { RangeOverride } from '@adofai-reading/core';
-import { describeOrder, formatOrder, lowerBound, parseOrder, upperBound } from '@adofai-reading/core';
+import {
+  BASE_LABEL,
+  describeOrder,
+  formatOrder,
+  lowerBound,
+  parseOrder,
+  upperBound,
+} from '@adofai-reading/core';
 import { Download, LocateFixed, Plus, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { seek, setLoop } from '../../chart/controls';
@@ -64,6 +71,7 @@ export function SectionsPanel() {
   };
 
   const noteOverrideCount = Object.keys(ov.notes).length;
+  const bases = ov.bases ?? [];
 
   return (
     <div className="space-y-6 p-4">
@@ -281,6 +289,57 @@ export function SectionsPanel() {
       </Section>
 
       <Section
+        title="키 기반 전환"
+        aside={
+          bases.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => update((o) => ({ ...o, bases: [] }))}>
+              모두 지우기
+            </Button>
+          )
+        }
+      >
+        {bases.length === 0 ? (
+          <p className="text-xs leading-relaxed text-dim">
+            레벨 전체가 {BASE_LABEL[model.profile.simple.base]}입니다. 일시정지한 뒤 레인 옆 카드에서
+            “#번호부터” 기반을 바꾸면 여기에 쌓입니다.
+          </p>
+        ) : (
+          <ul className="m-0 list-none space-y-1 p-0">
+            {bases.map((b) => (
+              <li
+                key={b.floor}
+                className="flex items-center justify-between gap-2 rounded-lg bg-surface px-3 py-1.5 text-sm"
+              >
+                <span className="text-ink-2">
+                  <b className="tabular">#{b.floor}</b>부터 {BASE_LABEL[b.base]}
+                </span>
+                <span className="flex">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label="이 위치로 이동"
+                    onClick={() => seek(floorTime(b.floor) - leadIn)}
+                  >
+                    <LocateFixed size={13} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label="전환 삭제"
+                    onClick={() =>
+                      update((o) => ({ ...o, bases: o.bases.filter((x) => x.floor !== b.floor) }))
+                    }
+                  >
+                    <Trash2 size={13} />
+                  </Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      <Section
         title="노트별 수정"
         aside={
           noteOverrideCount > 0 && (
@@ -307,7 +366,7 @@ export function SectionsPanel() {
           </Button>
         </div>
         <p className="text-xs text-dim">
-          현재 프로필과 이 레벨의 구간·노트 수정을 JSON 하나로 저장합니다. 레벨 파일은 건드리지 않습니다.
+          이 레벨의 구간·노트 수정과 키 기반 전환을 JSON 하나로 저장합니다. 레벨 파일은 건드리지 않습니다.
         </p>
         {message && <p className="text-xs text-accent-soft">{message}</p>}
       </Section>

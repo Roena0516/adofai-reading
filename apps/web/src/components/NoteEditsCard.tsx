@@ -1,13 +1,17 @@
+import type { KeyBase } from '@adofai-reading/core';
+import { BASE_LABEL, upperBound } from '@adofai-reading/core';
 import { Download, RotateCcw, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { exportLevelFingering, importLevelFingering } from '../chart/levelFile';
 import type { ChartModel } from '../chart/model';
-import { useLevelOverrides, useOverrides } from '../stores/overrides';
-import { Button, ConfirmButton } from './ui';
+import { setBaseFrom, useLevelOverrides, useOverrides } from '../stores/overrides';
+import { usePlayer } from '../stores/player';
+import { Button, ConfirmButton, Segmented } from './ui';
 
 /**
  * Shown next to the lanes while paused: how many notes were moved by hand (saved in this browser
- * as you edit), and buttons to export / import them as JSON or undo them all.
+ * as you edit), buttons to export / import them as JSON or undo them all, and the 2키/4키 base to
+ * use from the stream at the playhead on.
  */
 export function NoteEditsCard({ model }: { model: ChartModel }) {
   const hash = model.loaded.hash;
@@ -15,6 +19,17 @@ export function NoteEditsCard({ model }: { model: ChartModel }) {
   const patch = useOverrides((s) => s.patch);
   const [message, setMessage] = useState<string | null>(null);
   const count = Object.keys(ov.notes).length;
+  const time = usePlayer((s) => s.time);
+
+  // the stream at the playhead: its first tile is where a base switch starts
+  const { timing, analysis, fingering, profile } = model;
+  const next = Math.min(timing.notes.length - 1, upperBound(timing.noteTimes, time - 0.02));
+  const run = analysis.runs[analysis.events[analysis.noteEvent[next]!]!.run]!;
+  const fromFloor = timing.notes[analysis.events[run.firstEvent]!.firstNote]!.floor;
+  const baseHere = (fingering.runBase[run.index] || profile.simple.base) as KeyBase;
+  const switchHere = (ov.bases ?? []).some((b) => b.floor === fromFloor);
+  const setBase = (base: KeyBase) =>
+    patch(hash, (o) => setBaseFrom({ ...o, bases: o.bases ?? [] }, fromFloor, base, profile.simple.base));
 
   useEffect(() => {
     if (!message) return;
@@ -58,6 +73,24 @@ export function NoteEditsCard({ model }: { model: ChartModel }) {
           </ConfirmButton>
         )}
       </div>
+      {profile.mode === 'simple' && (
+        <div className="flex items-center justify-between gap-2 border-t border-border-soft pt-1.5">
+          <span className="whitespace-nowrap text-muted">
+            <b className="text-ink tabular">#{fromFloor}</b>부터 기반
+            {switchHere && <span className="text-accent-soft"> · 전환</span>}
+          </span>
+          <Segmented
+            size="sm"
+            value={baseHere}
+            onChange={setBase}
+            options={([2, 4] as const).map((b) => ({
+              value: b,
+              label: `${b}키`,
+              title: `#${fromFloor} 연타부터 ${BASE_LABEL[b]}으로 칩니다`,
+            }))}
+          />
+        </div>
+      )}
       {message && <p className="m-0 leading-snug text-accent-soft">{message}</p>}
     </div>
   );

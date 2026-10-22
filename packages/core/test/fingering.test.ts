@@ -63,10 +63,12 @@ describe('8 lanes and orders', () => {
   });
 
   it('builds the simple orders for each key count and roll style', () => {
-    const o = (k: 1 | 2 | 4 | 6 | 8, s: 'inout' | 'outin' | 'stairs', m: 'L' | 'R' = 'R') =>
+    const o = (k: 1 | 2 | 3 | 4 | 6 | 8, s: 'inout' | 'outin' | 'stairs', m: 'L' | 'R' = 'R') =>
       formatOrder(simpleOrder(k, s, m, LANES));
     expect(o(1, 'inout')).toBe('5');
     expect(o(2, 'inout')).toBe('54');
+    expect(o(3, 'inout')).toBe('564');
+    expect(o(3, 'outin')).toBe('654');
     expect(o(4, 'inout')).toBe('5643');
     expect(o(6, 'inout')).toBe('567432');
     expect(o(8, 'inout')).toBe('56784321');
@@ -78,7 +80,7 @@ describe('8 lanes and orders', () => {
   });
 });
 
-describe('simple layout (비트별 키 수)', () => {
+describe('simple layout (2키/4키 기반)', () => {
   const p = defaultProfile();
 
   it('uses 1 key for quarters, a two-hand trill for 8ths and 4 keys for 16ths', () => {
@@ -92,14 +94,35 @@ describe('simple layout (비트별 키 수)', () => {
     expect(lanesFor(p, [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875])).toBe('56784321');
   });
 
-  it('exposes the generated bands', () => {
-    expect(effectiveBands(p).bands.map((b) => `${b.upTo ?? '∞'}:${b.order}`)).toEqual([
-      '4:5',
-      '8:54',
-      '16:5643',
-      '24:567432',
-      '∞:56784321',
-    ]);
+  it('uses 3 keys for 12비트 triplets on the 4키 base, a trill on the 2키 base', () => {
+    const triplets = [0, 1 / 3, 2 / 3, 1, 4 / 3, 5 / 3];
+    expect(lanesFor(p, triplets)).toBe('564564');
+    expect(lanesFor(defaultProfile(2), triplets)).toBe('545454');
+  });
+
+  it('uses 3 keys for 24비트 on the 2키 base', () => {
+    expect(lanesFor(defaultProfile(2), [0, 1 / 6, 2 / 6, 3 / 6, 4 / 6, 5 / 6])).toBe('564564');
+  });
+
+  it('exposes the generated bands for each base', () => {
+    const show = (q: ReturnType<typeof defaultProfile>) =>
+      effectiveBands(q).bands.map((b) => `${b.upTo ?? '∞'}:${b.order}`);
+    expect(show(p)).toEqual(['4:5', '8:54', '12:564', '16:5643', '24:567432', '∞:56784321']);
+    expect(show(defaultProfile(2))).toEqual(['8:5', '16:54', '24:564', '∞:5643']);
+  });
+
+  it('switches the base from a floor on ("이 구간부터 2키 기반")', () => {
+    // two 16th streams with a rest between them: notes 1-4 and 5-8 (floors 1-8)
+    const beatsAt = [0, 0.25, 0.5, 0.75, 2, 2.25, 2.5, 2.75];
+    const timing = fakeTiming(beats(beatsAt));
+    const a = analyzeRhythm(timing, SEC);
+    const floors = timing.notes.map((n) => n.floor);
+    const run = (bases: { floor: number; base: 2 | 4 }[]) =>
+      formatOrder([...assignFingering(a, floors, defaultProfile(4), { bases }).noteLane]);
+    expect(run([])).toBe('5643' + '5643');
+    expect(run([{ floor: floors[4]!, base: 2 }])).toBe('5643' + '5454');
+    const r = assignFingering(a, floors, defaultProfile(4), { bases: [{ floor: floors[4]!, base: 2 }] });
+    expect([...r.runBase]).toEqual([4, 2]);
   });
 });
 
@@ -248,15 +271,34 @@ describe('normalizeProfile', () => {
       ],
       keys: ['KeyD', 'KeyF', 'KeyJ', 'KeyK'],
     });
-    expect(p.version).toBe(4);
+    expect(p.version).toBe(5);
     expect(p.run.anchor).toBe('metric');
+    expect(p.simple.base).toBe(4);
     expect(p.mode).toBe('simple');
     expect(p.fingers).toEqual(FULL_FINGERS);
     expect(p.bands.map((b) => b.order)).toEqual(['5', '5643']);
     expect(p.keys).toEqual(['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon']);
   });
 
-  it('keeps a version-2 profile as it is', () => {
+  it('turns per-비트 key counts into a base, and the hand-edited mode into the layout', () => {
+    const twoKey = normalizeProfile({
+      version: 4,
+      mode: 'custom',
+      simple: {
+        style: 'outin',
+        tiers: [
+          { upTo: 8, keys: 1 },
+          { upTo: 16, keys: 2 },
+          { upTo: null, keys: 4 },
+        ],
+      },
+    });
+    expect(twoKey.simple).toEqual({ style: 'outin', base: 2 });
+    expect(twoKey.mode).toBe('simple');
+    expect(normalizeProfile({ version: 4, simple: { tiers: [{ upTo: 16, keys: 4 }] } }).simple.base).toBe(4);
+  });
+
+  it('keeps a current custom profile as it is', () => {
     const p = normalizeProfile({
       ...defaultProfile(),
       mode: 'custom',
@@ -289,7 +331,7 @@ describe('동타 inside hand groups', () => {
     for (const r of rots) a.push((((a.at(-1)! + 180 - r) % 360) + 360) % 360);
     return a;
   };
-  const lanesFrom = (rots: number[], bpm = 480, base = 120) => {
+  const lanesFrom = (rots: number[], bpm = 480, base = 120, profile = defaultProfile()) => {
     const lv = parseLevel(
       JSON.stringify({ angleData: anglesFrom(rots), settings: { bpm, offset: 0 }, actions: [] }),
     );
@@ -299,7 +341,7 @@ describe('동타 inside hand groups', () => {
       ...assignFingering(
         a,
         t.notes.map((n) => n.floor),
-        defaultProfile(),
+        profile,
       ).noteLane,
     ]);
   };
@@ -333,16 +375,57 @@ describe('동타 inside hand groups', () => {
     );
   });
 
-  it('re-phases at a rest so repeated 동타 stay on the main-hand index and middle', () => {
-    // at 240 BPM 16ths (Flower Rocket): 5 6 4 (rest) · 3 5+6 (rest) · 4 3 5+6 (rest) · 4 3 5+6
-    // — no 중약 동타, and 4 is not played again 2 sixteenths after itself
-    const rots = [180, 180, 360, 360, ...chordRest, ...twoSixteenths, ...chordRest, ...twoSixteenths, 30];
-    expect(lanesFrom(rots, 960, 240)).toBe('564' + '3' + '56' + '43' + '56' + '43' + '56');
+  it('keeps repeated 동타 on the main-hand index and middle after a rest (Flower Rocket #1626)', () => {
+    // at 240 BPM 16ths: 5 6 4 (rest) · 4 5+6 (rest) · 4 3 5+6 (rest) · 4 3 5+6 (rest) · 4 3 5+6 — the left
+    // index plays twice 2 sixteenths apart rather than the 동타 moving to the left hand; the 8비트 trill
+    // (5 4) does not borrow a middle finger
+    const figure = [...twoSixteenths, ...chordRest];
+    const rots = [180, 180, 360, 360, ...chordRest, ...figure, ...figure, ...twoSixteenths, 30];
+    expect(lanesFrom(rots, 960, 240)).toBe('564' + '4' + '56' + '43' + '56' + '43' + '56' + '43' + '56');
+  });
+
+  it('plays a repeated figure the same way every time with 2 keys (다가닥 다가닥)', () => {
+    // 8비트 with one key, 16비트 with two (5 4): Flower Rocket #722-746 at 240 BPM 16ths.
+    const p = defaultProfile();
+    p.simple = { ...p.simple, base: 2 };
+    const figure = [...twoSixteenths, ...chordRest]; // 단타 단타 동타 · 쉼
+    const rots = [...chordRest, ...chordRest, ...figure, ...figure, ...figure, 180];
+    // 5+6 5+6 | 5 4 5+6 | 5 4 5+6 | 5 4 5+6 — not 5 4 5+6 | 4 5 4+3 | …
+    expect(lanesFrom(rots, 960, 240, p)).toBe('56' + '56' + '5456' + '5456' + '5456' + '54');
+  });
+
+  it('plays a 32nd note inserted into a 16th stream with the same hand (Flower Rocket #1720)', () => {
+    const p = defaultProfile();
+    p.simple = { ...p.simple, base: 2 };
+    // per beat: 16th, 16th, then 90° + 90° (one extra 32nd), back on the 16th grid
+    const beat = [180, 180, 90, 90, 180];
+    const rots = [...beat, ...beat, ...beat, ...beat, 180];
+    const lv = parseLevel(
+      JSON.stringify({ angleData: anglesFrom(rots), settings: { bpm: 960, offset: 0 }, actions: [] }),
+    );
+    const a = analyzeRhythm(computeTiming(lv), [{ startFloor: 0, startTime: 0, bpm: 240 }]);
+    // one 16비트 stream, the extra note paired with the 16th before it
+    expect(a.runs.filter((r) => r.eventCount > 1)).toHaveLength(1);
+    expect(a.events.filter((e) => e.spread)).toHaveLength(4);
+    // 5 4 5+6 4 every beat: right hand on the beat and the pair, left hand in between
+    expect(lanesFrom(rots, 960, 240, p)).toBe('54564'.repeat(4) + '54');
+  });
+
+  it('밖안: a 동타 followed by the same hand takes the outer finger first (7+6 5 · 2+3 4)', () => {
+    const outin = defaultProfile(4, 'outin');
+    // 동타 on the beat, then three 16ths: the right hand plays 7+6 then 5, the left hand 3 4
+    expect(lanesFrom([...beatWithChord, ...beatWithChord, 180], 480, 120, outin)).toBe(
+      '765' + '34' + '765' + '34' + '65',
+    );
+    // a 동타 alone in its hand's turn keeps the hand's own two fingers (6+5 / 3+4)
+    const figure = [...twoSixteenths, ...chordRest];
+    expect(lanesFrom([...figure, ...figure, 180], 480, 120, outin).slice(0, 8)).toBe(
+      '65' + '34' + '65' + '34',
+    );
   });
 
   it('does the same with 6 and 8 keys', () => {
-    const p6 = { ...defaultProfile() };
-    p6.simple = { ...p6.simple, tiers: [{ upTo: null, keys: 6 as const }] };
+    const p6 = custom([band('567432')]);
     const lv = parseLevel(
       JSON.stringify({
         angleData: anglesFrom([...beatWithChord, 180, 180, 180]),

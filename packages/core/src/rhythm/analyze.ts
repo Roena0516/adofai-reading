@@ -210,21 +210,26 @@ function mergeStreamDoubles(
       const g = times[b]! - times[a]!;
       const gp = times[a]! - end(j - 1);
       const gn = start(j + 2) - times[b]!;
+      // The stream's step: the median of up to four gaps on each side, counting only gaps clearly
+      // longer than this pair's (other doubles nearby must not shrink the step).
       const around = [gp, gn];
-      if (j > 1) around.push(start(j - 1) - end(j - 2));
-      if (j + 3 < chords.length) around.push(start(j + 3) - end(j + 2));
-      around.sort((x, y) => x - y);
+      for (let k = 1; k <= 3 && j - 1 - k >= 0; k++) around.push(start(j - k) - end(j - 1 - k));
+      for (let k = 1; k <= 3 && j + 2 + k < chords.length; k++)
+        around.push(start(j + 2 + k) - end(j + 1 + k));
+      const steps = around.filter((x) => x >= 1.5 * g);
+      const pool = (steps.length ? steps : around).sort((x, y) => x - y);
       const stream =
-        around.length % 2
-          ? around[around.length >> 1]!
-          : (around[around.length / 2 - 1]! + around[around.length / 2]!) / 2;
+        pool.length % 2 ? pool[pool.length >> 1]! : (pool[pool.length / 2 - 1]! + pool[pool.length / 2]!) / 2;
       const streamBeat = (4 * (60 / stream)) / baseAt(times[a]!);
+      // 90°/270°: the pair moves the stream's grid by half a step
+      const shifted = gp >= 1.5 * g && gn >= 1.5 * g;
+      // 90°, 90°: one extra note inside a step (따다닥), the next note is back on the grid
+      const inserted = gp >= 0.85 * stream && gn >= 0.8 * g && Math.abs(g + gn - stream) <= 0.15 * stream;
       if (
         turn[a]! <= 90 + 1e-6 &&
         g > 0 &&
         g <= 0.6 * stream &&
-        gp >= 1.5 * g &&
-        gn >= 1.5 * g &&
+        (shifted || inserted) &&
         streamBeat >= minBeat * 0.97
       ) {
         out.push([a, 2, true, stream]);
@@ -301,10 +306,23 @@ export function analyzeRhythm(
     });
   }
 
+  // Around a stream double the stream's step is measured from whichever end of the pair keeps the
+  // grid: its end after a 90°/270° pair, its start after a note inserted inside a step.
+  const stepFrom = (pair: number, gapFromEnd: number, gapFromStart: number) => {
+    const step = streamGapOf.get(pair);
+    if (step == null) return gapFromEnd;
+    return Math.abs(gapFromStart - step) < Math.abs(gapFromEnd - step) ? gapFromStart : gapFromEnd;
+  };
   for (let e = 0; e < events.length; e++) {
     const ev = events[e]!;
-    if (e > 0) ev.gapPrev = ev.time - events[e - 1]!.endTime;
-    if (e + 1 < events.length) ev.gapNext = events[e + 1]!.time - ev.endTime;
+    if (e > 0) {
+      const prev = events[e - 1]!;
+      ev.gapPrev = stepFrom(e - 1, ev.time - prev.endTime, ev.time - prev.time);
+    }
+    if (e + 1 < events.length) {
+      const next = events[e + 1]!;
+      ev.gapNext = stepFrom(e, next.time - ev.endTime, next.time - ev.time);
+    }
     // a stream double moves at the speed of the stream around it
     ev.speedGap = ev.spread ? streamGapOf.get(e)! : Math.min(ev.gapPrev, ev.gapNext);
     if (Number.isFinite(ev.speedGap) && ev.speedGap > 0) {

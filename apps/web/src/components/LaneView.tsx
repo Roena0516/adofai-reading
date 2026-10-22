@@ -1,5 +1,6 @@
-import type { Finger, Judge } from '@adofai-reading/core';
+import type { Finger, Judge, KeyBase } from '@adofai-reading/core';
 import {
+  BASE_LABEL,
   JUDGE,
   Judge as JudgeImpl,
   computeStats,
@@ -433,6 +434,7 @@ export function Hud({ model, settings }: { model: ChartModel; settings: Settings
     };
   }, [model, time]);
   const bandIdx = model.fingering.runBand[info.runIdx] ?? -1;
+  const runBase = model.fingering.runBase[info.runIdx] ?? 0;
   return (
     <div className="space-y-1 rounded-xl border border-border-soft bg-canvas/85 px-2.5 py-2 text-[11px] backdrop-blur">
       <div className="flex justify-between gap-2 text-muted tabular">
@@ -448,7 +450,11 @@ export function Hud({ model, settings }: { model: ChartModel; settings: Settings
           {info.run.startTime > time + 0.05 ? '다음 연타' : '현재 연타'} · {info.run.eventCount}타
           {bandIdx >= 0 &&
             (model.profile.mode === 'simple' ? (
-              <> · {model.profile.simple.tiers[bandIdx]?.keys ?? '?'}키</>
+              <>
+                {' '}
+                · {info.seq.length}키
+                {runBase > 0 && <span className="text-dim"> ({BASE_LABEL[runBase as KeyBase]})</span>}
+              </>
             ) : (
               <> · 구간 {bandIdx + 1}</>
             ))}

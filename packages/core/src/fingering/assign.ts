@@ -4,7 +4,7 @@ import type { Lane } from './layout';
 import { FINGER_RANK, buildLanes, homeLane } from './layout';
 import { parseOrder } from './order';
 import { effectiveBands } from './presets';
-import type { Band, ChordAssign, FingeringProfile, SpeedUnit } from './profile';
+import type { Band, ChordAssign, FingeringProfile, KeyBase, SpeedUnit } from './profile';
 
 /** Apply a literal lane sequence to every note in a floor range (e.g. "3222322232232232"). */
 export interface RangeOverride {
@@ -15,10 +15,18 @@ export interface RangeOverride {
   enabled: boolean;
 }
 
+/** From this floor on, the simple layout uses this base (until the next switch). */
+export interface BaseSwitch {
+  floor: number;
+  base: KeyBase;
+}
+
 export interface FingeringOverrides {
   ranges: RangeOverride[];
   /** floor → 0-based lane */
   notes: Record<string, number>;
+  /** Level parts played on another base than the profile's ("이 구간부터 4키 기반"). */
+  bases: BaseSwitch[];
 }
 
 export const LANE_SOURCE = { auto: 0, range: 1, note: 2 } as const;
@@ -27,8 +35,10 @@ export interface FingeringResult {
   lanes: Lane[];
   noteLane: Int16Array;
   noteSource: Uint8Array;
-  /** Band index per run (-1 when the profile has no bands). */
+  /** Band index per run within its base's bands (-1 when there are none). */
   runBand: Int16Array;
+  /** Base each run was laid out on (0 in custom mode). */
+  runBase: Uint8Array;
   /** Resolved lane cycle per run. */
   runSeq: number[][];
   /** Parsed order per band, null when invalid. */
@@ -121,14 +131,27 @@ export interface HandGroups {
   posInGroup: Int16Array;
   /** Finger a group uses at a position; past the group's end it keeps rolling over that hand. */
   fingerAt: (group: number, pos: number) => number;
+  /**
+   * The fingers one pass of a group plays, from position `from`, when the pass holds `extra` more
+   * notes than slots (동타). A hand rolling outwards adds them past its last finger (5+6 · 7); a hand
+   * rolling inwards adds them on its outer side and plays them first (7+6 · 5).
+   */
+  turn: (group: number, from: number, extra: number) => number[];
 }
 
 /**
  * Split an order into hand groups (5643 → R[5,6] L[4,3]). Inside a group the hand rolls in the
- * group's direction; extra fingers (a 동타 taking two at once) push its later notes further along
- * that hand (5+6, 7), and the next group starts again from its own first finger.
+ * group's direction; extra fingers for a 동타 come from the hand's outer side — after the group when
+ * it rolls outwards (안밖 5+6, 7), before it when it rolls inwards (밖안 7+6, 5) — and the next group
+ * starts again from its own first finger.
  */
-export function handGroups(seq: number[], lanes: Lane[], defaultDir: 1 | -1): HandGroups {
+export function handGroups(
+  seq: number[],
+  lanes: Lane[],
+  defaultDir: 1 | -1,
+  /** One-finger groups rolling inwards also take 동타 fingers from the outer side (밖안 2키: 6+5). */
+  outerFirst = false,
+): HandGroups {
   const groupOf = new Int16Array(seq.length);
   const posInGroup = new Int16Array(seq.length);
   const groups: number[][] = [];
@@ -140,31 +163,53 @@ export function handGroups(seq: number[], lanes: Lane[], defaultDir: 1 | -1): Ha
     posInGroup[i] = groups[g]!.length;
     groups[g]!.push(l);
   });
-  const ext = groups.map((grp) => {
+  const rank = (l: number) => FINGER_RANK[lanes[l]!.finger];
+  const owns = groups.map((grp) => {
     const hand = lanes[grp[0]!]!.hand;
-    const own = lanes
+    return lanes
       .filter((l) => l.hand === hand)
-      .sort((a, b) => FINGER_RANK[a.finger] - FINGER_RANK[b.finger]);
-    const start = own.findIndex((l) => l.index === grp[0]);
-    const dir =
-      grp.length > 1
-        ? Math.sign(FINGER_RANK[lanes[grp[1]!]!.finger] - FINGER_RANK[lanes[grp[0]!]!.finger]) || defaultDir
-        : defaultDir;
+      .sort((a, b) => FINGER_RANK[a.finger] - FINGER_RANK[b.finger])
+      .map((l) => l.index);
+  });
+  /** +1: the group rolls outwards (검지 → 소지), -1: inwards. */
+  const dirs = groups.map((grp) =>
+    grp.length > 1 ? Math.sign(rank(grp[1]!) - rank(grp[0]!)) || defaultDir : defaultDir,
+  );
+  const ext = groups.map((grp, g) => {
+    const own = owns[g]!;
+    const dir = dirs[g]!;
+    const start = own.indexOf(grp[0]!);
     const out: number[] = [];
-    for (let i = start; i >= 0 && i < own.length; i += dir) out.push(own[i]!.index);
-    for (let i = start - dir; i >= 0 && i < own.length; i -= dir) out.push(own[i]!.index);
+    for (let i = start; i >= 0 && i < own.length; i += dir) out.push(own[i]!);
+    for (let i = start - dir; i >= 0 && i < own.length; i -= dir) out.push(own[i]!);
     return out;
   });
+  const fingerAt = (g: number, pos: number) => {
+    const grp = groups[g]!;
+    if (pos < grp.length) return grp[pos]!;
+    const e = ext[g]!;
+    // past the group: continue from the group's last finger along the hand
+    const last = e.indexOf(grp[grp.length - 1]!);
+    return e[(last + 1 + pos - grp.length) % e.length]!;
+  };
   return {
     groupOf,
     posInGroup,
-    fingerAt: (g, pos) => {
+    fingerAt,
+    turn: (g, from, extra) => {
       const grp = groups[g]!;
-      if (pos < grp.length) return grp[pos]!;
-      const e = ext[g]!;
-      // past the group: continue from the group's last finger along the hand
-      const last = e.indexOf(grp[grp.length - 1]!);
-      return e[(last + 1 + pos - grp.length) % e.length]!;
+      const head: number[] = [];
+      if (dirs[g]! < 0 && extra > 0 && (grp.length > 1 || outerFirst)) {
+        // the nearest outer fingers, played outermost first
+        const outer = owns[g]!.filter((l) => rank(l) > rank(grp[from]!) && !grp.includes(l));
+        head.push(...outer.slice(0, extra).reverse());
+      }
+      const list = [...head, ...grp.slice(from)];
+      for (let i = 0; i < 8; i++) {
+        const f = fingerAt(g, grp.length + i);
+        if (!list.includes(f)) list.push(f);
+      }
+      return list;
     },
   };
 }
@@ -189,15 +234,20 @@ interface Option {
   cost: number;
 }
 
+/** The fingers one hand used in one event and when that gesture started. */
 interface HandTouch {
   lanes: number[];
-  /** Start and end time of the event. */
-  time: number;
-  end: number;
+  times: number[];
 }
 
+/** Does `b` strike a finger that `a` struck less than `within` seconds before? */
 const touchesRepeat = (a: HandTouch | undefined, b: HandTouch | undefined, within: number) =>
-  !!a && !!b && b.time - a.end < within && b.lanes.some((l) => a.lanes.includes(l));
+  !!a &&
+  !!b &&
+  b.lanes.some((l, i) => {
+    const k = a.lanes.indexOf(l);
+    return k >= 0 && b.times[i]! - a.times[k]! < within;
+  });
 
 /** How awkward a choice is; each run of a stream starts where it costs least. */
 const COST = {
@@ -211,6 +261,8 @@ const COST = {
   sameFinger: 1,
   /** The same hand again right after a short rest. */
   sameHand: 0.3,
+  /** Playing a run differently from the identical figure right before it. */
+  repeat: 1,
   sameHandWithin: 0.2,
   /** A run without 동타 whose strong beat is not on the order's first finger. */
   offBeat: 0.6,
@@ -219,6 +271,22 @@ const COST = {
   /** How far ahead (in beats) a run's start looks at the runs that follow. */
   lookaheadBeats: 4,
 };
+
+/** Fewest notes after which the order brings any finger back (5643 → 4, 54 → 2, 3222 → 1). */
+function minRepeatSlots(seq: number[]): number {
+  let best = seq.length;
+  seq.forEach((lane, i) => {
+    for (let d = 1; d < seq.length; d++) {
+      if (seq[(i + d) % seq.length] === lane) {
+        best = Math.min(best, d);
+        break;
+      }
+    }
+  });
+  return best;
+}
+
+const sameLanes = (a: number[], b: number[]) => a.length === b.length && a.every((l, i) => l === b[i]);
 
 function timeOfLastNote(analysis: RhythmAnalysis, note: number, fallback: number): number {
   const ev = analysis.events[analysis.noteEvent[note]!];
@@ -245,24 +313,46 @@ export function assignFingering(
   const noteLane = new Int16Array(noteCount);
   const noteSource = new Uint8Array(noteCount);
   const runBand = new Int16Array(analysis.runs.length).fill(-1);
+  const runBase = new Uint8Array(analysis.runs.length);
   const runSeq: number[][] = new Array(analysis.runs.length);
   const errors: string[] = [];
 
   if (L === 0) {
     errors.push('손가락이 하나도 선택되지 않았습니다.');
-    return { lanes, noteLane, noteSource, runBand, runSeq: runSeq.fill([]), bandSeqs: [], errors };
+    return { lanes, noteLane, noteSource, runBand, runBase, runSeq: runSeq.fill([]), bandSeqs: [], errors };
   }
 
   const fallback = [homeLane(lanes, profile.mainHand)];
-  const { bands, speedUnit } = effectiveBands(profile);
-  const bandSeqs = bands.map((b, i) => {
-    const p = parseOrder(b.order, L);
-    if (p.error) {
-      errors.push(`속도 구간 ${i + 1}: ${p.error}`);
-      return null;
+  const custom = profile.mode === 'custom';
+  type BandSet = { bands: Band[]; speedUnit: SpeedUnit; seqs: (number[] | null)[] };
+  const bandSets = new Map<number, BandSet>();
+  const bandSet = (base: KeyBase): BandSet => {
+    const key = custom ? 0 : base; // custom orders do not depend on the base
+    let set = bandSets.get(key);
+    if (!set) {
+      const { bands, speedUnit } = effectiveBands(profile, base);
+      const seqs = bands.map((b, i) => {
+        const p = parseOrder(b.order, L);
+        if (p.error) {
+          errors.push(`속도 구간 ${i + 1}: ${p.error}`);
+          return null;
+        }
+        return p.seq;
+      });
+      bandSets.set(key, (set = { bands, speedUnit, seqs }));
     }
-    return p.seq;
-  });
+    return set;
+  };
+  const bandSeqs = bandSet(profile.simple.base).seqs;
+  // "이 구간부터 n키 기반": the base in effect at a floor
+  const switches = (overrides?.bases ?? [])
+    .filter((b) => Number.isFinite(b.floor) && (b.base === 2 || b.base === 4))
+    .sort((a, b) => a.floor - b.floor);
+  const baseAt = (floor: number): KeyBase => {
+    let base = profile.simple.base;
+    for (const sw of switches) if (sw.floor <= floor) base = sw.base;
+    return base;
+  };
   // Each event takes one slot of the order (a non-one-hand chord in cycle mode takes one per note).
   const slotsOf = (ev: { noteCount: number; oneHand: boolean }) =>
     !ev.oneHand && profile.chord.assign === 'cycle' ? ev.noteCount : 1;
@@ -270,7 +360,9 @@ export function assignFingering(
   const groupsFor = (seq: number[]) => {
     let g = groupCache.get(seq);
     if (!g) {
-      g = handGroups(seq, lanes, profile.chord.oneHandDirection === 'in' ? -1 : 1);
+      // a hand with one finger in the order rolls like the style says (밖안: 6+5, not 5+6)
+      const outin = profile.mode === 'simple' && profile.simple.style === 'outin';
+      g = handGroups(seq, lanes, outin || profile.chord.oneHandDirection === 'in' ? -1 : 1, outin);
       groupCache.set(seq, g);
     }
     return g;
@@ -280,19 +372,44 @@ export function assignFingering(
   const runs = analysis.runs;
   const events = analysis.events;
 
+  /** A run's rhythm figure: its order band, events (notes, one-hand, spread), spacing and beat phase. */
+  const runShape = (run: Run, band: number) => {
+    const unit = run.speedGap > 0 ? run.speedGap : 1;
+    const first = events[run.firstEvent]!;
+    const phase = Math.round((((first.beatPos % 1) + 1) % 1) * 48) % 48;
+    const parts: Array<string | number> = [band, run.eventCount, phase];
+    for (let e = run.firstEvent; e <= run.lastEvent; e++) {
+      const ev = events[e]!;
+      const gap = e > run.firstEvent ? Math.round(((ev.time - events[e - 1]!.time) / unit) * 4) : 0;
+      parts.push(`${ev.noteCount}${ev.oneHand ? 'h' : ''}${ev.spread ? 's' : ''}${gap}`);
+    }
+    return parts.join('|');
+  };
+
   // Per-run order and timing.
   const info = runs.map((run) => {
-    const bi = bands.length ? pickBand(bands, speedValue(run, speedUnit)) : -1;
-    const seq = (bi >= 0 ? bandSeqs[bi] : null) ?? fallback;
+    const base = baseAt(noteFloors[events[run.firstEvent]!.firstNote] ?? 0);
+    const set = bandSet(base);
+    const bi = set.bands.length ? pickBand(set.bands, speedValue(run, set.speedUnit)) : -1;
+    const seq = (bi >= 0 ? set.seqs[bi] : null) ?? fallback;
     const last = events[run.lastEvent]!;
     runBand[run.index] = bi;
+    runBase[run.index] = custom ? 0 : base;
     runSeq[run.index] = seq;
-    const anchorLane = bi >= 0 ? bands[bi]!.anchor : null;
+    const anchorLane = bi >= 0 ? set.bands[bi]!.anchor : null;
     const anchorPos = anchorLane != null ? Math.max(0, seq.indexOf(anchorLane - 1)) : 0;
+    // The order itself brings a finger back every `minRepeatSlots(seq)` notes (5643: 4, 54: 2);
+    // a repeat that comes sooner than that, and sooner than sameFingerMinMs, is the avoidable kind.
+    const natural = 0.9 * minRepeatSlots(seq) * (run.speedGap > 0 ? run.speedGap : Infinity);
     return {
       bi,
       seq,
+      anchorLane,
       hg: groupsFor(seq),
+      /** Same-finger repeats faster than this are penalised in this run. */
+      sameWithin: Math.min(minSame, natural),
+      /** The run's rhythm figure and where it sits in the beat, to spot a repeated figure. */
+      shape: runShape(run, (custom ? 0 : base) * 100 + bi),
       /** The finger that should take the strong beat (5 for 안밖). */
       beatLane: seq[anchorPos]!,
       firstTime: events[run.firstEvent]!.time,
@@ -319,7 +436,7 @@ export function assignFingering(
 
   /** Play a run from a slot of its order; the cost counts awkward 동타 and finger repeats. */
   const simulate = (run: Run, startSlot: number, startShift: number): RunSim => {
-    const { seq, hg } = info[run.index]!;
+    const { seq, hg, sameWithin } = info[run.index]!;
     const len = seq.length;
     let slot = startSlot;
     let shift = startShift;
@@ -333,16 +450,48 @@ export function assignFingering(
     let beatLane = -1;
     const handFirst: RunSim['handFirst'] = {};
     const handLast: RunSim['handLast'] = {};
+    /**
+     * Notes beyond its fingers that the hand plays in this pass of group `g` (from event `e` at slot
+     * `at`): a 동타 followed by another note of the same hand needs one more finger, a lone 동타 does not.
+     */
+    const extraAhead = (e: number, at: number, g: number) => {
+      let notes = 0;
+      let kPrev = -1;
+      const k0 = hg.posInGroup[mod(at, len)]!;
+      let groupLen = 0;
+      for (let i = 0; i < len; i++) if (hg.groupOf[i] === g) groupLen++;
+      for (let x = e, sl = at; x <= run.lastEvent; x++) {
+        const sm = mod(sl, len);
+        if (hg.groupOf[sm] !== g || hg.posInGroup[sm]! <= kPrev) break;
+        kPrev = hg.posInGroup[sm]!;
+        const evx = events[x]!;
+        notes += evx.oneHand ? evx.noteCount : 1;
+        sl += slotsOf(evx);
+      }
+      return Math.max(0, notes - (groupLen - k0));
+    };
+    let turn: number[] = [];
+    let turnGroup = -1;
+    let turnFrom = 0;
+    const at = (k: number, plus: number) => {
+      const p = k - turnFrom + plus;
+      return turn[((p % turn.length) + turn.length) % turn.length]!;
+    };
     for (let e = run.firstEvent; e <= run.lastEvent; e++) {
       const ev = events[e]!;
       slot = mod(slot, len);
       const g = hg.groupOf[slot]!;
       const k = hg.posInGroup[slot]!;
       if (k === 0 && e > run.firstEvent) shift = 0; // the hand starts a new pass of its group
+      if (e === run.firstEvent || k === 0 || g !== turnGroup) {
+        turnGroup = g;
+        turnFrom = k;
+        turn = hg.turn(g, k, extraAhead(e, slot, g));
+      }
       let picked: number[];
       if (ev.oneHand) {
-        // one hand plays all notes with its next fingers; that hand's later notes move outwards too
-        picked = Array.from({ length: ev.noteCount }, (_, j) => hg.fingerAt(g, k + shift + j));
+        // one hand plays all notes with its next fingers; that hand's later notes move on too
+        picked = Array.from({ length: ev.noteCount }, (_, j) => at(k, shift + j));
         if (ev.noteCount > 1) {
           if (k + shift > 0) cost += COST.chordOffStart;
           // the hand is chosen from the 동타 a player sees as the run starts, not from a long run's tally
@@ -359,17 +508,28 @@ export function assignFingering(
           lanes,
           profile.chord.oneHandDirection,
         );
+        if (profile.chord.assign === 'cycle' && (shift > 0 || turn[0] !== hg.fingerAt(g, turnFrom))) {
+          // notes on the hand that just used extra fingers move on past them (5+6 · 7+8, not 6+7)
+          for (let j = 0; j < ev.noteCount; j++) {
+            const sj = mod(slot + j, len);
+            if (hg.groupOf[sj] === g) picked[j] = at(hg.posInGroup[sj]!, shift);
+          }
+        }
         shift = 0;
       } else {
-        picked = [hg.fingerAt(g, k + shift)];
+        picked = [at(k, shift)];
       }
       // a hand playing a finger it used a moment ago (5+6 · 3 · 5 within 130 ms)
-      const end = timeOfLastNote(analysis, ev.firstNote + ev.noteCount - 1, ev.time);
       for (const hand of ['L', 'R'] as const) {
-        const own = picked.filter((l) => lanes[l]!.hand === hand);
-        if (!own.length) continue;
-        const touch = { lanes: own, time: ev.time, end };
-        if (touchesRepeat(handLast[hand], touch, minSame)) cost += COST.sameFinger;
+        const touch: HandTouch = { lanes: [], times: [] };
+        picked.forEach((l) => {
+          if (lanes[l]!.hand !== hand) return;
+          touch.lanes.push(l);
+          // a 동타 is one gesture: its fingers count from when it starts (6+5 · 5 is not a quick 5 · 5)
+          touch.times.push(ev.time);
+        });
+        if (!touch.lanes.length) continue;
+        if (touchesRepeat(handLast[hand], touch, sameWithin)) cost += COST.sameFinger;
         handFirst[hand] ??= touch;
         handLast[hand] = touch;
       }
@@ -397,17 +557,16 @@ export function assignFingering(
     };
   };
 
-  let lastLanes: number[] = [];
-  let lastTime = -Infinity;
+  /** Each hand's last touch at the end of the previous stream. */
+  let lastTouch: RunSim['handLast'] = {};
   for (let head = 0; head < runs.length;) {
     let tail = head;
     while (tail + 1 < runs.length && carry[tail + 1]) tail++;
 
     // The stream's first run starts fresh: the anchor finger on its first note (or strongest beat).
     const run0 = runs[head]!;
-    const { bi, seq } = info[head]!;
+    const { seq, anchorLane } = info[head]!;
     const len = seq.length;
-    const anchorLane = bi >= 0 ? bands[bi]!.anchor : null;
     let anchorPos = anchorLane != null ? seq.indexOf(anchorLane - 1) : 0;
     if (anchorPos < 0) anchorPos = 0;
     let bestSlots = 0;
@@ -424,9 +583,13 @@ export function assignFingering(
       }
     }
     let slot0 = mod(anchorPos - bestSlots, len);
-    // Do not start on the finger that just played when the gap is too short for it.
-    if (minSame > 0 && len > 1 && info[head]!.firstTime - lastTime < minSame) {
-      for (let tries = 0; tries < len && lastLanes.includes(seq[mod(slot0, len)]!); tries++) slot0++;
+    // Do not start on the finger that just played when the gap is too short for it — by the same
+    // measure as inside a run (2키: 5+6 · 5 is how it is played).
+    const within = Math.max(info[head]!.sameWithin, head > 0 ? info[head - 1]!.sameWithin : 0);
+    const justPlayed = (lane: number) =>
+      touchesRepeat(lastTouch[lanes[lane]!.hand], { lanes: [lane], times: [info[head]!.firstTime] }, within);
+    if (len > 1) {
+      for (let tries = 0; tries < len && justPlayed(seq[mod(slot0, len)]!); tries++) slot0++;
     }
     slot0 = mod(slot0, len);
 
@@ -479,14 +642,26 @@ export function assignFingering(
       if (!strict) {
         for (let c = 0; c < curLen; c++) {
           if (c !== grid) starts.push([c, 0, COST.rephase]);
-          if (c !== grid || gridShift !== 1) starts.push([c, 1, COST.rephase + COST.startShift]);
+          // one finger further along — only to a finger the order itself uses (4키 4 → 3, never 2키 5 → 6)
+          const along = cur.hg.fingerAt(cur.hg.groupOf[c]!, cur.hg.posInGroup[c]! + 1);
+          if ((c !== grid || gridShift !== 1) && cur.seq.includes(along))
+            starts.push([c, 1, COST.rephase + COST.startShift]);
         }
       }
       return starts.map(([c, sh, move]) => {
         const sim = simAt(j, c, sh);
         let cost = sim.cost + move;
         for (const hand of ['L', 'R'] as const)
-          if (touchesRepeat(prev.handLast[hand], sim.handFirst[hand], minSame)) cost += COST.sameFinger;
+          if (
+            touchesRepeat(
+              prev.handLast[hand],
+              sim.handFirst[hand],
+              Math.max(cur.sameWithin, prevInfo.sameWithin),
+            )
+          )
+            cost += COST.sameFinger;
+        // the same figure again (다가닥 다가닥) is played the same way
+        if (cur.shape === prevInfo.shape && !sameLanes(sim.lanes, prev.lanes)) cost += COST.repeat;
         // the same hand again across at most one short rest breaks the alternation
         const near = Math.max(COST.sameHandWithin, 2.5 * runs[j]!.speedGap);
         if (gap < near && lanes[sim.first[0]!]!.hand === lanes[prev.last[0]!]!.hand) cost += COST.sameHand;
@@ -528,8 +703,7 @@ export function assignFingering(
       const first = events[run.firstEvent]!.firstNote;
       st.lanes.forEach((l, n) => (noteLane[first + n] = l));
     });
-    lastLanes = sim.last;
-    lastTime = info[tail]!.lastNoteTime;
+    lastTouch = sim.handLast;
     head = tail + 1;
   }
 
@@ -564,5 +738,5 @@ export function assignFingering(
     }
   }
 
-  return { lanes, noteLane, noteSource, runBand, runSeq, bandSeqs, errors };
+  return { lanes, noteLane, noteSource, runBand, runBase, runSeq, bandSeqs, errors };
 }

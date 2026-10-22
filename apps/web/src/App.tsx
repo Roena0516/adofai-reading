@@ -3,7 +3,7 @@ import { loadFiles } from './chart/loader';
 import { ChartContext, useChartModel } from './chart/model';
 import { DropScreen } from './components/DropScreen';
 import { Header } from './components/Header';
-import { Sidebar } from './components/Sidebar';
+import { Sidebar, SidebarHandle } from './components/Sidebar';
 import { TimelineStrip } from './components/TimelineStrip';
 import { Stage } from './components/Stage';
 import { Transport } from './components/Transport';
@@ -61,9 +61,10 @@ export function App() {
       {model ? (
         <ChartContext.Provider value={model}>
           <TimelineStrip />
-          <div className="flex min-h-0 flex-1">
+          <div className="relative flex min-h-0 flex-1">
             {sidebarOpen && <Sidebar />}
             <Stage />
+            <SidebarHandle />
           </div>
           <Transport />
         </ChartContext.Provider>

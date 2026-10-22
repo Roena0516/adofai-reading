@@ -106,9 +106,13 @@ export function useChartModel(): ChartModel | null {
   const fingering = useMemo(
     () =>
       analysis
-        ? assignFingering(analysis, noteFloors, profile, { ranges: overrides.ranges, notes: overrides.notes })
+        ? assignFingering(analysis, noteFloors, profile, {
+            ranges: overrides.ranges,
+            notes: overrides.notes,
+            bases: overrides.bases ?? [],
+          })
         : null,
-    [analysis, noteFloors, profile, overrides.ranges, overrides.notes],
+    [analysis, noteFloors, profile, overrides.ranges, overrides.notes, overrides.bases],
   );
 
   return useMemo(() => {
