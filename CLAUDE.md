@@ -19,6 +19,10 @@ pnpm dump "<레벨.zip>" [--base 2|4] [--style inout|outin|stairs] [--notes 40] 
 
 변경을 마치면 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`를 모두 통과시킨다.
 
+배포는 Vercel 프로젝트 `adofai-reading`(https://adofai-reading.vercel.app)이다. `vercel.json`이 pnpm으로 설치·빌드하고
+`apps/web/dist`를 내보낸다. CLI로 올리므로 `.vercelignore`가 테스트 레벨 zip과 `.env*`를 막는다.
+배포 명령은 `npx vercel@latest deploy --prod`이고, 사용자가 요청할 때만 한다.
+
 ## 구조
 
 pnpm 모노레포(pnpm 9). TypeScript는 6.0.3으로 고정한다. typescript-eslint가 TS 7을 지원하지 않는다.

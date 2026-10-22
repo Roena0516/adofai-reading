@@ -3,6 +3,8 @@
 불과 얼음의 춤(A Dance of Fire and Ice) 커스텀 레벨을 건반 리듬게임처럼 손가락 레인으로 펼쳐 보여주고,
 자기 타법대로 키보드로 연습할 수 있는 웹 앱입니다.
 
+배포: https://adofai-reading.vercel.app
+
 ## 실행
 
 ```bash
