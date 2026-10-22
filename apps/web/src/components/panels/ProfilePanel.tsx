@@ -24,12 +24,12 @@ const STYLE_HINT: Record<RollStyle, string> = {
   stairs: '주손은 검지→바깥, 이어서 반대 손은 바깥→검지 (5634 · 56781234)',
 };
 const BASE_HINT: Record<KeyBase, string> = {
-  2: '8비트 이하는 주손 하나, 12·16비트는 양손 트릴, 24비트는 3키, 32비트는 4키로 칩니다.',
+  2: '8비트 이하는 주손 하나, 12·16비트는 양손 트릴, 24비트는 3키, 32비트는 4키, 48비트는 6키, 64비트 이상은 8키로 칩니다.',
   4: '8비트는 양손 트릴, 12비트는 3키, 16비트는 4키, 24비트는 6키, 32비트는 8키로 칩니다.',
 };
 
 /** Densities players name (12비트 = triplets); a tier row lists the ones it covers. */
-const DENSITIES = [12, 16, 24, 32];
+const DENSITIES = [12, 16, 24, 32, 48, 64];
 
 function tierLabel(base: KeyBase, i: number): string {
   const tiers = BASE_TIERS[base];
@@ -181,6 +181,15 @@ export function ProfilePanel() {
             </div>
           ))}
         </div>
+        <Toggle
+          label="1키 구간의 엇박은 반대 손"
+          checked={profile.simple.offbeatOtherHand}
+          onChange={(offbeatOtherHand) => edit((p) => ({ ...p, simple: { ...p.simple, offbeatOtherHand } }))}
+        />
+        <p className="-mt-1 text-xs leading-[1.6] text-dim">
+          한 키로 치는 구간(2키 기반의 8비트 등)에서 90° 타일로 16분 엇박에 들어오는 노트를 반대 손으로
+          칩니다. 정박은 주손, 엇박은 반대 손이 됩니다.
+        </p>
         <p className="text-xs leading-[1.6] text-dim">
           연타가 기준 BPM 한 박에 몇 개인지(16비트 = 4개, 12비트 = 셋잇단)로 키 수를 고르고, 첫 손가락이
           강박에 오도록 순서를 돌립니다. 레벨의 한 구간만 다른 기반으로 치려면 일시정지한 뒤 레인 옆 카드의

@@ -29,6 +29,8 @@ export interface Settings {
   visualOffsetMs: number;
   /** Positive = presses are treated as earlier (use when you are judged late). */
   inputOffsetMs: number;
+  /** Lanes left out of the lane view (0-based); only the picture changes. */
+  hiddenLanes: number[];
   /** Seconds of run-up before a seek target in practice. */
   leadIn: number;
   /** The game's timing option for practice judgments. */
@@ -77,6 +79,7 @@ export const DEFAULT_SETTINGS: Settings = {
   metronome: false,
   visualOffsetMs: 0,
   inputOffsetMs: 0,
+  hiddenLanes: [],
   leadIn: 2,
   judgeStrictness: 'normal',
   sidebarTab: 'profile',

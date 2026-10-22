@@ -73,7 +73,7 @@ export function defaultProfile(base: KeyBase = 4, style: RollStyle = 'inout'): F
     name: '내 타법',
     version: 5,
     mode: 'simple',
-    simple: { style, base },
+    simple: { style, base, offbeatOtherHand: true },
     fingers: { L: [...FULL_FINGERS.L], R: [...FULL_FINGERS.R] },
     mainHand: 'R',
     keys: keysForLayout(lanes),

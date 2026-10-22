@@ -38,6 +38,11 @@ export interface FingeringProfile {
     style: RollStyle;
     /** Key counts per 비트 come from `BASE_TIERS[base]`. */
     base: KeyBase;
+    /**
+     * In runs played with one key, a single note on a 16th off-beat (the 90° tiles of an 8비트 run) goes
+     * to the other hand: on-beat right, off-beat left.
+     */
+    offbeatOtherHand: boolean;
   };
   fingers: HandFingers;
   mainHand: Hand;
@@ -79,7 +84,7 @@ export interface FingeringProfile {
 
 /**
  * Keys per stream density.
- * 2키 기반: 8비트 one finger, 12·16비트 two-hand trill, 24비트 3키, 32비트 4키.
+ * 2키 기반: 8비트 one finger, 12·16비트 two-hand trill, 24비트 3키, 32비트 4키, 48비트 6키, 64비트 8키.
  * 4키 기반: 8비트 trill, 12비트 3키 (every beat starts on the same finger), 16비트 4키, 24비트 6키, 32비트 8키.
  */
 export const BASE_TIERS: Record<KeyBase, Tier[]> = {
@@ -87,7 +92,9 @@ export const BASE_TIERS: Record<KeyBase, Tier[]> = {
     { upTo: 8, keys: 1 },
     { upTo: 16, keys: 2 },
     { upTo: 24, keys: 3 },
-    { upTo: null, keys: 4 },
+    { upTo: 32, keys: 4 },
+    { upTo: 48, keys: 6 },
+    { upTo: null, keys: 8 },
   ],
   4: [
     { upTo: 4, keys: 1 },
@@ -202,6 +209,7 @@ export function normalizeProfile(input: unknown): FingeringProfile {
       style: oneOf(simple.style, ['inout', 'outin', 'stairs'] as const, 'inout'),
       // v5: per-비트 key counts became a 2키/4키 base
       base: simple.base === 2 || simple.base === 4 ? simple.base : baseFromTiers(simple.tiers),
+      offbeatOtherHand: typeof simple.offbeatOtherHand === 'boolean' ? simple.offbeatOtherHand : true,
     },
     fingers: { L: [...FULL_FINGERS.L], R: [...FULL_FINGERS.R] },
     mainHand: oneOf(o.mainHand, ['L', 'R'] as const, 'R'),

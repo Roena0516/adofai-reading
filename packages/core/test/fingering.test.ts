@@ -100,15 +100,40 @@ describe('simple layout (2키/4키 기반)', () => {
     expect(lanesFor(defaultProfile(2), triplets)).toBe('545454');
   });
 
-  it('uses 3 keys for 24비트 on the 2키 base', () => {
-    expect(lanesFor(defaultProfile(2), [0, 1 / 6, 2 / 6, 3 / 6, 4 / 6, 5 / 6])).toBe('564564');
+  it('uses 3 keys for 24비트, 6 for 48비트 and 8 from 64비트 on the 2키 base', () => {
+    const p2 = defaultProfile(2);
+    expect(lanesFor(p2, [0, 1 / 6, 2 / 6, 3 / 6, 4 / 6, 5 / 6])).toBe('564564');
+    expect(lanesFor(p2, [0, 0.125, 0.25, 0.375, 0.5])).toBe('56435');
+    expect(
+      lanesFor(
+        p2,
+        Array.from({ length: 7 }, (_, i) => i / 12),
+      ),
+    ).toBe('5674325');
+    expect(
+      lanesFor(
+        p2,
+        Array.from({ length: 9 }, (_, i) => i / 16),
+      ),
+    ).toBe('567843215');
   });
 
   it('exposes the generated bands for each base', () => {
     const show = (q: ReturnType<typeof defaultProfile>) =>
       effectiveBands(q).bands.map((b) => `${b.upTo ?? '∞'}:${b.order}`);
     expect(show(p)).toEqual(['4:5', '8:54', '12:564', '16:5643', '24:567432', '∞:56784321']);
-    expect(show(defaultProfile(2))).toEqual(['8:5', '16:54', '24:564', '∞:5643']);
+    expect(show(defaultProfile(2))).toEqual(['8:5', '16:54', '24:564', '32:5643', '48:567432', '∞:56784321']);
+  });
+
+  it('plays the off-beats a 16th step puts into a one-key 8th run with the other hand (MEGAMIX #533)', () => {
+    // 8ths with 90° tiles: 1.25 and 1.75 sit between the 8ths, then a 270° tile brings the grid back
+    const megamix = [0, 0.5, 1, 1.25, 1.75, 2.5, 3, 3.5, 4, 4.25, 4.75, 5.5];
+    const p2 = defaultProfile(2);
+    expect(lanesFor(p2, megamix)).toBe('555' + '44' + '555' + '5' + '44' + '5');
+    const off = { ...p2, simple: { ...p2.simple, offbeatOtherHand: false } };
+    expect(lanesFor(off, megamix)).toBe('555' + '45' + '555' + '5' + '45' + '5');
+    // off-beats reached only by dotted steps (Feral's 135° tiles) keep the one key
+    expect(lanesFor(p2, [0, 1, 2, 3, 3.75, 4.5, 5.25, 6])).toBe('55555555');
   });
 
   it('switches the base from a floor on ("이 구간부터 2키 기반")', () => {
@@ -293,7 +318,7 @@ describe('normalizeProfile', () => {
         ],
       },
     });
-    expect(twoKey.simple).toEqual({ style: 'outin', base: 2 });
+    expect(twoKey.simple).toEqual({ style: 'outin', base: 2, offbeatOtherHand: true });
     expect(twoKey.mode).toBe('simple');
     expect(normalizeProfile({ version: 4, simple: { tiers: [{ upTo: 16, keys: 4 }] } }).simple.base).toBe(4);
   });

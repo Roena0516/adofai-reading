@@ -25,6 +25,7 @@ export type LaneSettings = Pick<
   | 'showRunLabels'
   | 'showBeatLines'
   | 'mode'
+  | 'hiddenLanes'
 >;
 
 export interface LastHit {
@@ -74,15 +75,26 @@ const LABEL_W = 210;
 /** Narrower run-label column when the lanes float over the game view. */
 const LABEL_W_OVERLAY = 150;
 
+/**
+ * Which lanes are drawn. Hidden lanes only leave the picture: the fingering, the keys and the judging
+ * stay the same. Hiding every lane shows them all.
+ */
+function shownLanes(lanes: ChartModel['lanes'], hidden: readonly number[]): boolean[] {
+  const shown = lanes.map((_, i) => !hidden.includes(i));
+  return shown.some(Boolean) ? shown : lanes.map(() => true);
+}
+
 /** Width of the translucent lane panel laid over the game view. */
 export function laneOverlayWidth(
   lanes: ChartModel['lanes'],
-  s: Pick<Settings, 'laneWidth' | 'showRunLabels'>,
+  s: Pick<Settings, 'laneWidth' | 'showRunLabels' | 'hiddenLanes'>,
 ): number {
-  const both = lanes.some((l) => l.hand === 'L') && lanes.some((l) => l.hand === 'R');
+  const shown = shownLanes(lanes, s.hiddenLanes);
+  const both =
+    lanes.some((l, i) => shown[i] && l.hand === 'L') && lanes.some((l, i) => shown[i] && l.hand === 'R');
   return (
     OVERLAY_PAD +
-    lanes.length * s.laneWidth +
+    shown.filter(Boolean).length * s.laneWidth +
     (both ? HAND_GAP : 0) +
     (s.showRunLabels ? LABEL_W_OVERLAY : OVERLAY_PAD)
   );
@@ -116,10 +128,11 @@ export class LaneRenderer {
     const { lanes } = frame.model;
     const s = frame.settings;
     const laneW = s.laneWidth;
-    const hasL = lanes.some((l) => l.hand === 'L');
-    const hasR = lanes.some((l) => l.hand === 'R');
+    const shown = shownLanes(lanes, s.hiddenLanes);
+    const hasL = lanes.some((l, i) => shown[i] && l.hand === 'L');
+    const hasR = lanes.some((l, i) => shown[i] && l.hand === 'R');
     const gap = hasL && hasR ? HAND_GAP : 0;
-    const total = lanes.length * laneW + gap;
+    const total = shown.filter(Boolean).length * laneW + gap;
     const labelW = LABEL_W;
     // Keep clear of the HUD card in the top-left; drop the run labels before overlapping it.
     const hudClear = HUD_WIDTH + 20;
@@ -138,7 +151,11 @@ export class LaneRenderer {
             ? hudClear
             : Math.max(16, centered(0));
     }
-    const laneX = lanes.map((l, i) => left + i * laneW + (l.hand === 'R' && hasL ? gap : 0));
+    // hidden lanes have no x (NaN) and the shown ones close up
+    let k = 0;
+    const laneX = lanes.map((l, i) =>
+      shown[i] ? left + k++ * laneW + (l.hand === 'R' && hasL ? gap : 0) : Number.NaN,
+    );
     const down = s.direction === 'down';
     const judgeY = down ? this.h - 104 : 104;
     const keyH = 58;
@@ -219,6 +236,7 @@ export class LaneRenderer {
 
     // Lane columns
     lanes.forEach((l, i) => {
+      if (!Number.isFinite(g.laneX[i])) return;
       c.fillStyle = l.hand === 'L' ? 'rgba(142,197,255,0.05)' : 'rgba(255,146,148,0.05)';
       c.fillRect(g.laneX[i]!, 0, g.laneW, this.h);
       c.fillStyle = 'rgba(255,255,255,0.05)';
@@ -301,11 +319,14 @@ export class LaneRenderer {
       c.lineWidth = ev.oneHand ? 3 : 2;
       c.strokeStyle = ev.oneHand && firstLane ? laneColor(firstLane, 0.85) : 'rgba(255,255,255,0.4)';
       c.beginPath();
+      let started = false;
       for (let k = 0; k < ev.noteCount; k++) {
         const x = g.laneX[noteLane[i + k]!]! + g.laneW / 2;
+        if (!Number.isFinite(x)) continue;
         const y = yOf(noteTimes[i + k]!);
-        if (k === 0) c.moveTo(x, y);
+        if (!started) c.moveTo(x, y);
         else c.lineTo(x, y);
+        started = true;
       }
       c.stroke();
     }
@@ -343,6 +364,7 @@ export class LaneRenderer {
         alpha = Math.max(alpha, end && end > time ? 0.6 : 0);
       }
       const x = g.laneX[lane]!;
+      if (!Number.isFinite(x)) continue;
       const y = yOf(t);
       c.globalAlpha = alpha;
       if (end) {
@@ -377,7 +399,7 @@ export class LaneRenderer {
         c.lineWidth = 2;
         c.strokeRect(x + 2, y - h / 2 - 1, g.laneW - 4, h + 2);
         const pl = frame.judge!.pressedLane[i]!;
-        if (pl >= 0 && g.laneX[pl] !== undefined) {
+        if (pl >= 0 && Number.isFinite(g.laneX[pl])) {
           c.fillStyle = '#f2a2b8';
           c.fillText('✕', g.laneX[pl]! + g.laneW / 2, y);
         }
@@ -407,6 +429,7 @@ export class LaneRenderer {
     // Keycaps
     lanes.forEach((ln, i) => {
       const x = g.laneX[i]!;
+      if (!Number.isFinite(x)) return;
       const pressFlash = Math.max(0, 1 - (frame.perfNow - frame.pressAt[i]!) / 160);
       const glow = Math.max(frame.pressed[i] ? 1 : 0, pressFlash, practice ? 0 : ghost[i]!);
       c.fillStyle = '#242427';

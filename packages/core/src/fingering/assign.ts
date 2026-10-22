@@ -713,6 +713,31 @@ export function assignFingering(
     head = tail + 1;
   }
 
+  // One-key runs (8비트 in 2키 기반): a lone note on a 16th off-beat that a 16th step (a 90° tile) put
+  // there is played by the other hand, so on-beat tiles stay on the main hand and off-beat ones go to
+  // the other (MEGAMIX #533). Off-beats reached only by dotted steps (Feral's 135° tiles) are left alone.
+  if (profile.simple.offbeatOtherHand) {
+    const beatOf = (e: number) => events[e]!.beatPos;
+    const near = (x: number, y: number) => Math.abs(x - y) < 0.02;
+    const offbeat16 = (e: number) => {
+      const q = beatOf(e) * 4;
+      return near(q, Math.round(q)) && mod(Math.round(q), 2) === 1;
+    };
+    const sixteenthStep = (e: number) => e > 0 && near(beatOf(e) - beatOf(e - 1), 0.25);
+    for (const run of runs) {
+      if (info[run.index]!.seq.length !== 1) continue;
+      for (let e = run.firstEvent; e <= run.lastEvent; e++) {
+        if (events[e]!.noteCount !== 1 || !offbeat16(e)) continue;
+        // the stretch of off-beat notes this one is in, and how it was entered
+        let s = e;
+        while (s > 0 && offbeat16(s - 1) && beatOf(s) - beatOf(s - 1) <= 1) s--;
+        if (!sixteenthStep(s) && !sixteenthStep(s - 1)) continue;
+        const i = events[e]!.firstNote;
+        noteLane[i] = L - 1 - noteLane[i]!;
+      }
+    }
+  }
+
   for (const range of overrides?.ranges ?? []) {
     if (!range.enabled) continue;
     const p = parseOrder(range.sequence, L);

@@ -3,7 +3,8 @@ import { useChart } from '../../chart/model';
 import { formatTime } from '../../lib/format';
 import { useSettings } from '../../stores/settings';
 import type { NoteLabel } from '../../stores/settings';
-import { Button, Field, Kbd, NumberField, Section, Segmented, Slider, Toggle } from '../ui';
+import { laneColor } from '../../render/colors';
+import { Button, Field, Kbd, NumberField, Section, Segmented, Slider, Toggle, cx } from '../ui';
 
 const pctFmt = (v: number) => `${Math.round(v * 100)}%`;
 
@@ -78,6 +79,41 @@ export function SettingsPanel() {
             ]}
           />
         </Field>
+        <div className="space-y-1.5">
+          <span className="text-sm text-ink-soft">레인 숨기기</span>
+          <div className="flex gap-1">
+            {model.lanes.map((ln, i) => {
+              const hidden = s.hiddenLanes.includes(i);
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  aria-pressed={!hidden}
+                  title={hidden ? '보이기' : '숨기기'}
+                  onClick={() =>
+                    s.set({
+                      hiddenLanes: hidden
+                        ? s.hiddenLanes.filter((x) => x !== i)
+                        : [...s.hiddenLanes, i].sort((a, b) => a - b),
+                    })
+                  }
+                  className={cx(
+                    'h-7 w-7 cursor-pointer rounded-lg text-xs font-medium tabular transition-colors',
+                    hidden
+                      ? 'bg-transparent text-dim shadow-[0_0_0_1px_var(--color-border-soft)] line-through'
+                      : 'bg-surface-2 shadow-[0_0_0_1px_var(--color-border-2)] hover:bg-surface-3',
+                  )}
+                  style={hidden ? undefined : { color: laneColor(ln) }}
+                >
+                  {i + 1}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs leading-[1.6] text-dim">
+            고른 레인을 화면에서만 감춥니다. 손가락 배정과 판정은 그대로입니다.
+          </p>
+        </div>
         <Field label="레인 너비">
           <Slider
             value={s.laneWidth}
