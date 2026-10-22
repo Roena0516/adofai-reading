@@ -223,8 +223,11 @@ function mergeStreamDoubles(
       const streamBeat = (4 * (60 / stream)) / baseAt(times[a]!);
       // 90°/270°: the pair moves the stream's grid by half a step
       const shifted = gp >= 1.5 * g && gn >= 1.5 * g;
-      // 90°, 90°: one extra note inside a step (따다닥), the next note is back on the grid
-      const inserted = gp >= 0.85 * stream && gn >= 0.8 * g && Math.abs(g + gn - stream) <= 0.15 * stream;
+      // 90°, 90°: one extra note inside a step (따다닥): the next note is back on the grid and the stream
+      // goes on in steps after it — not the start of a faster roll (드르륵, Feral #902)
+      const resumes = j + 3 >= chords.length || start(j + 3) - end(j + 2) >= 0.85 * stream;
+      const inserted =
+        gp >= 0.85 * stream && gn >= 0.8 * g && Math.abs(g + gn - stream) <= 0.15 * stream && resumes;
       if (
         turn[a]! <= 90 + 1e-6 &&
         g > 0 &&

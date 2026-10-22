@@ -6,3 +6,8 @@ node_modules
 .DS_Store
 .vercel
 .env*
+/\[No.005\] meganeko - Feral/
+*.adofai
+*.ogg
+*.mp3
+*.wav

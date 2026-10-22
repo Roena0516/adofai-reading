@@ -529,7 +529,13 @@ export function assignFingering(
           touch.times.push(ev.time);
         });
         if (!touch.lanes.length) continue;
-        if (touchesRepeat(handLast[hand], touch, sameWithin)) cost += COST.sameFinger;
+        // a one-hand 동타 adds a finger next to the one it starts on; that extra finger coming back a
+        // little early is what a 동타 is (5 6 4 3 · 5+6), so only the finger it starts on is checked
+        const checked: HandTouch =
+          ev.oneHand && ev.noteCount > 1 && touch.lanes.includes(picked[0]!)
+            ? { lanes: [picked[0]!], times: [ev.time] }
+            : touch;
+        if (touchesRepeat(handLast[hand], checked, sameWithin)) cost += COST.sameFinger;
         handFirst[hand] ??= touch;
         handLast[hand] = touch;
       }

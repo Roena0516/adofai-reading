@@ -23,9 +23,9 @@ export function makeLevel(
 export const fixturePath = (name: string) => fileURLToPath(new URL(`../../../${name}`, import.meta.url));
 export const hasFixture = (name: string) => existsSync(fixturePath(name));
 
-export async function loadFixture(name: string): Promise<Level> {
+export async function loadFixture(name: string, chart?: string): Promise<Level> {
   const files = await readZip(readFileSync(fixturePath(name)));
-  const lvl = files.find((f) => /\.adofai$/i.test(f.path));
+  const lvl = files.find((f) => (chart ? f.path.endsWith(chart) : /\.adofai$/i.test(f.path)));
   if (!lvl) throw new Error(`no level in ${name}`);
   return parseLevel(decodeText(lvl.data));
 }

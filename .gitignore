@@ -7,3 +7,9 @@ coverage
 .vite
 .vercel
 .env*
+# Level folders and their files (songs, charts) stay local
+/\[No.005\] meganeko - Feral/
+*.adofai
+*.ogg
+*.mp3
+*.wav

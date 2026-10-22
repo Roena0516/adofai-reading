@@ -424,6 +424,22 @@ describe('동타 inside hand groups', () => {
     );
   });
 
+  it('rolls a 드르륵 (32nds for half a beat inside a 2키 trill) as one 4키 roll, 안밖 and 밖안', () => {
+    const s16 = (n: number) => Array<number>(n).fill(180);
+    // 16th trill, then five 32nds from the half beat to the beat, then the trill again (Feral #902)
+    const toBeat = [...s16(6), 90, 90, 90, 90, ...s16(3)];
+    expect(lanesFrom(toBeat, 960, 240, defaultProfile(2, 'inout'))).toBe('545454' + '56435' + '454');
+    expect(lanesFrom(toBeat, 960, 240, defaultProfile(2, 'outin'))).toBe('545454' + '65346' + '454');
+    // four 32nds from the beat, a 동타 on the half beat, then the trill (Feral #1321)
+    const intoChord = [...s16(8), 90, 90, 90, 90, 30, 150, ...s16(3)];
+    expect(lanesFrom(intoChord, 960, 240, defaultProfile(2, 'inout'))).toBe(
+      '54545454' + '5643' + '56' + '4545',
+    );
+    expect(lanesFrom(intoChord, 960, 240, defaultProfile(2, 'outin'))).toBe(
+      '54545454' + '6534' + '65' + '4545',
+    );
+  });
+
   it('does the same with 6 and 8 keys', () => {
     const p6 = custom([band('567432')]);
     const lv = parseLevel(

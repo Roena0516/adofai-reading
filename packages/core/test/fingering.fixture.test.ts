@@ -57,3 +57,19 @@ describe.skipIf(!hasFixture('Flower Rocket.zip'))('Flower Rocket on the 2키 bas
     expect(r).toEqual({ strongOnLeft: [], weakOnRight: [], middleSingles: [] });
   });
 });
+
+describe.skipIf(!hasFixture('[No.005] meganeko - Feral.zip'))('Feral [Insane] on the 2키 base', () => {
+  it('rolls each 드르륵 from #862 on like the order (#902 to the beat, #1321 into a 동타)', async () => {
+    const t = computeTiming(await loadFixture('[No.005] meganeko - Feral.zip', 'Insane.adofai'));
+    const a = analyzeRhythm(t, detectSections(t));
+    const floors = t.notes.map((n) => n.floor);
+    const lanesAt = (f: FingeringResult, from: number, to: number) =>
+      t.notes.map((n, i) => (n.floor >= from && n.floor <= to ? String(f.noteLane[i]! + 1) : '')).join('');
+    const inout = assignFingering(a, floors, defaultProfile(2, 'inout'));
+    const outin = assignFingering(a, floors, defaultProfile(2, 'outin'));
+    expect(lanesAt(inout, 902, 906)).toBe('56435');
+    expect(lanesAt(outin, 902, 906)).toBe('65346');
+    expect(lanesAt(inout, 1321, 1326)).toBe('564356');
+    expect(lanesAt(outin, 1321, 1326)).toBe('653465');
+  });
+});
