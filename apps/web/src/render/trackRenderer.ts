@@ -39,6 +39,15 @@ const PLANET_R = 0.21;
  */
 const ROUND_BELOW = (70 * Math.PI) / 180;
 const MITER_LIMIT = 3;
+/**
+ * Midspins and full turn-backs (360° tiles) stand apart from the tile they come from, as in the game
+ * (measured from game screenshots, in tiles from the floor's centre): a 360° tile is a D with its flat
+ * side 0.19 back towards the joint and a round cap centred 0.08 beyond; a midspin reaches 0.34 back
+ * and ends in a point.
+ */
+const TURN_BACK = 0.19;
+const TURN_CAP = 0.08;
+const MIDSPIN_REACH = 0.34;
 const FIRE = '#ff4f45';
 const ICE = '#3f8cff';
 
@@ -233,6 +242,7 @@ export class TrackRenderer {
     h: number,
     midspin: boolean,
     dirOf: (a: number) => [number, number],
+    unit: number,
   ): void {
     const c = this.ctx;
     c.beginPath();
@@ -260,8 +270,8 @@ export class TrackRenderer {
       const [ux, uy] = dirOf(entry);
       const nx = -uy;
       const ny = ux;
-      const ex = x + ux * len;
-      const ey = y + uy * len;
+      const ex = x + ux * MIDSPIN_REACH * unit;
+      const ey = y + uy * MIDSPIN_REACH * unit;
       c.moveTo(ex + nx * h, ey + ny * h);
       c.lineTo(x + nx * h, y + ny * h);
       c.lineTo(x - ux * h * 1.15, y - uy * h * 1.15);
@@ -278,6 +288,24 @@ export class TrackRenderer {
     const [ax, ay] = dirOf(entry);
     const [bx, by] = dirOf(exit);
     const between = Math.acos(Math.max(-1, Math.min(1, ax * bx + ay * by)));
+    if (between < 0.02) {
+      // full turn-back (360°): a D standing apart, flat towards the joint and round away from it
+      const nx = -ay;
+      const ny = ax;
+      const bx0 = x + ax * TURN_BACK * unit;
+      const by0 = y + ay * TURN_BACK * unit;
+      const cx = x - ax * TURN_CAP * unit;
+      const cy = y - ay * TURN_CAP * unit;
+      c.moveTo(bx0 + nx * h, by0 + ny * h);
+      c.lineTo(cx + nx * h, cy + ny * h);
+      c.lineTo(cx - nx * h, cy - ny * h);
+      c.lineTo(bx0 - nx * h, by0 - ny * h);
+      c.closePath();
+      c.moveTo(cx + h, cy);
+      c.arc(cx, cy, h, 0, Math.PI * 2, false);
+      c.closePath();
+      return;
+    }
     if (between < ROUND_BELOW) {
       rect(ax, ay);
       rect(bx, by);
@@ -470,7 +498,7 @@ export class TrackRenderer {
       const h = (TRACK_W / 2) * scale * px;
       const outline = Math.max(1, OUTLINE * scale * px);
       c.globalAlpha = alpha;
-      this.tilePath(x, y, entry, exit, ARM * scale * px, h, midspin, dirOf);
+      this.tilePath(x, y, entry, exit, ARM * scale * px, h, midspin, dirOf, scale * px);
       if (glow) {
         c.strokeStyle = css(fill, 0.22);
         c.lineWidth = outline * 2 + 0.14 * scale * px;
